@@ -29,10 +29,8 @@ func (r *PostgresRepository) BatchInsertArticles(articles []models.Article) erro
 	return r.db.Create(&articles).Error
 }
 
-func (r *PostgresRepository) GetCachedArticles(limit int) ([]models.Article, error) {
+func (r *PostgresRepository) GetCachedArticles(url string) ([]models.Article, error) {
 	var articles []models.Article
-	if err := r.db.Order("created_at desc").Limit(limit).Find(&articles).Error; err != nil {
-		return nil, err
-	}
-	return articles, nil
+	err := r.db.Where("url = ?", url).Find(&articles).Error
+	return articles, err
 }

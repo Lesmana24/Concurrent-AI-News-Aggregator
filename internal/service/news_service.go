@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"news-aggregator/internal/models"
-	"news-aggregator/internal/repository"
 	"os"
 	"sync"
 	"time"
@@ -15,16 +14,23 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
+type Repository interface {
+	GetUserByKey(apiKey string) (*models.User, error)
+	UpdateUserQuota(userID uint, newQuota int) error
+	BatchInsertArticles(articles []models.Article) error
+	GetCachedArticles(url string) ([]models.Article, error)
+}
+
 type NewsService interface {
 	SummarizeArticles(apiKey string, urls []string) ([]models.ArticleResponse, error)
 	GetUser(apiKey string) (*models.User, error)
 }
 
 type newsService struct {
-	repo *repository.PostgresRepository
+	repo Repository
 }
 
-func NewNewsService(repo *repository.PostgresRepository) NewsService {
+func NewNewsService(repo Repository) NewsService {
 	return &newsService{repo: repo}
 }
 
