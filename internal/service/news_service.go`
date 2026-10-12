@@ -1,0 +1,143 @@
+package service
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"news-aggregator/internal/models"
+	"news-aggregator/internal/repository"
+	"sync"
+	"time"
+
+	"github.com/PuerkitoBio/goquery"
+)
+
+type NewsService interface {
+	SummarizeArticles(apiKey string, urls []string) ([]models.ArticleResponse, error)
+	GetUser(apiKey string) (*models.User, error)
+}
+
+type newsService struct {
+	repo *repository.PostgresRepository
+}
+
+func NewNewsService(repo *repository.PostgresRepository) NewsService {
+	return &newsService{repo: repo}
+}
+
+func (s *newsService) GetUser(apiKey string) (*models.User, error) {
+	return s.repo.GetUserByKey(apiKey)
+}
+
+func (s *newsService) SummarizeArticles(apiKey string, urls []string) ([]models.ArticleResponse, error) {
+	user, err := s.GetUser(apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("authentication failed: %w", err)
+	}
+
+	if user.Quota <= 0 {
+		return nil, fmt.Errorf("quota exceeded")
+	}
+
+	// Fan-Out: Process URLs concurrently
+	resultsChan := make(chan models.ArticleResponse, len(urls))
+	errChan := make(chan error, len(urls))
+	var wg sync.WaitGroup
+
+	for _, url := range urls {
+		wg.Add(1)
+		go func(u string) {
+			defer wg.Done()
+			
+			// 1. Scraping
+			content, err := s.scrapeContent(u)
+			if err != nil {
+				errChan <- fmt.Errorf("scrape error [%s]: %w", u, err)
+				return
+			}
+
+			// 2. AI Summarization (Mock for now, using dummy text)
+			summary, provider, err := s.summarizeWithAI(content)
+			if err != nil {
+				errChan <- fmt.Errorf("AI error [%s]: %w", u, err)
+				return
+			}
+
+			// 3. Cache result in DB
+			article := models.Article{
+				URL:         u,
+				Content:     content,
+				Summary:     summary,
+				AIProvider:  provider,
+				PublishedAt: time.Now(),
+			}
+			if err := s.repo.BatchInsertArticles([]models.Article{article}); err != nil {
+				log.Printf("Warning: failed to cache article %s: %v", u, err)
+			}
+
+			resultsChan <- models.ArticleResponse{
+				Title:   "Summarized Article", // Mock title
+				URL:     u,
+				Summary: summary,
+				Source:  provider,
+			}
+		}(url)
+	}
+
+	wg.Wait()
+	close(resultsChan)
+	close(errChan)
+
+	// Collect results
+	var finalResults []models.ArticleResponse
+	for res := range resultsChan {
+		finalResults = append(finalResults, res)
+	}
+
+	// Decrement Quota (1 per URL)
+	newQuota := user.Quota - len(urls)
+	if err := s.repo.UpdateUserQuota(user.ID, newQuota); err != nil {
+		log.Printf("Error updating quota for user %d: %v", user.ID, err)
+	}
+
+	if len(finalResults) == 0 && len(errChan) > 0 {
+		return nil, <-errChan
+	}
+
+	return finalResults, nil
+}
+
+func (s *newsService) scrapeContent(url string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("http error: %d", resp.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var text string
+	doc.Find("p").Each(func(i int, s *goquery.Selection) {
+		t, _ := s.Text()
+		text += t + " "
+	})
+
+	if text == "" {
+		return "", fmt.Errorf("no content found in page")
+	}
+
+	return text, nil
+}
+
+func (s *newsService) summarizeWithAI(content string) (string, string, error) {
+	// Mock AI implementation: In a real scenario, this would call OmniRoute API
+	// For now, return a dummy summary to verify concurrency and flow
+	return "This is a mock summary of the article content: " + content[:10] + "...", "OmniRoute-Mock", nil
+}

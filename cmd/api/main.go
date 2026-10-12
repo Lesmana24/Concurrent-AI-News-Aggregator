@@ -6,8 +6,11 @@ import (
 	"net/http"
 	"os"
 
+	deliveryHttp "news-aggregator/internal/delivery/http"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/repository"
+	"news-aggregator/internal/service"
+	"news-aggregator/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -37,13 +40,32 @@ func main() {
 	}
 
 	// Initialize Repository
-	_ = repository.NewPostgresRepository(db)
+	repo := repository.NewPostgresRepository(db)
+	
+	// Initialize Service
+	svc := service.NewNewsService(repo)
+
+	// Initialize Handler
+	handler := deliveryHttp.NewNewsHandler(svc)
 
 	// Gin Server
 	r := gin.Default()
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
+	
+	// Routes
+	api := r.Group("/api/v1")
+	{
+		api.GET("/health", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		})
+		
+		// Protected routes
+		protected := api.Group("/")
+		protected.Use(middleware.APIKeyAuth(svc))
+		{
+			protected.POST("/summarize", handler.Summarize)
+		}
+	}
+
 
 	port := os.Getenv("PORT")
 	if port == "" {

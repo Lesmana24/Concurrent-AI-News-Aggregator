@@ -18,6 +18,7 @@ type Article struct {
 	Content     string    `gorm:"type:text" json:"content"`
 	URL         string    `gorm:"uniqueIndex;not null" json:"url"`
 	Source      string    `gorm:"index" json:"source"`
+	AIProvider  string    `json:"ai_provider"`
 	PublishedAt time.Time `json:"published_at"`
 	Summary     string    `gorm:"type:text" json:"summary"`
 }
