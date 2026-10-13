@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"io"
 	"news-aggregator/internal/models"
 	"os"
 	"sync"
@@ -147,20 +148,30 @@ func (s *newsService) summarizeWithAI(content string) (string, string, error) {
 		return "", "", fmt.Errorf("OmniRoute configuration missing in .env")
 	}
 
-	requestBody, _ := json.Marshal(map[string]interface{}{
-		"prompt": "Summarize the following news content concisely in one paragraph:\n\n" + content,
-		"max_tokens": 200,
-	})
+	payload := map[string]interface{}{
+		"model": "best-template",
+		"messages": []map[string]string{
+			{"role": "system", "content": "You are a professional news summarizer. Provide a concise, engaging summary of the article in 2-3 sentences. Focus on the main point."},
+			{"role": "user", "content": content},
+		},
+		"temperature": 0.7,
+		"max_tokens":  300,
+	}
 
-	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(requestBody))
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", "", err
+	}
+
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(body))
 	if err != nil {
 		return "", "", err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Authorization", apiKey)
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", "", err
@@ -168,23 +179,32 @@ func (s *newsService) summarizeWithAI(content string) (string, string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		log.Printf("OmniRoute error: status=%d url=%s body=%s", resp.StatusCode, apiURL, string(b))
 		return "", "", fmt.Errorf("AI API responded with status: %d", resp.StatusCode)
 	}
 
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var aiResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&aiResp); err != nil {
 		return "", "", err
 	}
 
-	summary, ok := result["text"].(string)
-	if !ok {
-		return "", "", fmt.Errorf("unexpected AI response format")
+	if len(aiResp.Choices) == 0 {
+		if aiResp.Error != nil && aiResp.Error.Message != "" {
+			return "", "", fmt.Errorf("AI returned error: %s", aiResp.Error.Message)
+		}
+		return "", "", fmt.Errorf("AI returned no response")
 	}
 
-	provider, _ := result["provider"].(string)
-	if provider == "" {
-		provider = "OmniRoute"
-	}
-
-	return summary, provider, nil
+	return aiResp.Choices[0].Message.Content, "OmniRoute", nil
 }
