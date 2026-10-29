@@ -1,14 +1,12 @@
 package service
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
 	"log"
 	"net/http"
-	"io"
+	"news-aggregator/internal/ai"
 	"news-aggregator/internal/models"
-	"os"
 	"sync"
 	"time"
 
@@ -28,11 +26,24 @@ type NewsService interface {
 }
 
 type newsService struct {
-	repo Repository
+	repo         Repository
+	aiSummarizer ai.Summarizer
 }
 
-func NewNewsService(repo Repository) NewsService {
-	return &newsService{repo: repo}
+// NewNewsService creates a new NewsService with the specified repository and optional AI summarizer.
+// If no summarizer is provided, the default multi-provider FallbackChain is used.
+func NewNewsService(repo Repository, summarizers ...ai.Summarizer) NewsService {
+	var summarizer ai.Summarizer
+	if len(summarizers) > 0 && summarizers[0] != nil {
+		summarizer = summarizers[0]
+	} else {
+		summarizer = ai.NewDefaultSummarizer()
+	}
+
+	return &newsService{
+		repo:         repo,
+		aiSummarizer: summarizer,
+	}
 }
 
 func (s *newsService) GetUser(apiKey string) (*models.User, error) {
@@ -57,14 +68,14 @@ func (s *newsService) SummarizeArticles(apiKey string, urls []string) ([]models.
 		wg.Add(1)
 		go func(u string) {
 			defer wg.Done()
-			
+
 			content, err := s.scrapeContent(u)
 			if err != nil {
 				errChan <- fmt.Errorf("scrape error [%s]: %w", u, err)
 				return
 			}
 
-			summary, provider, err := s.summarizeWithAI(content)
+			summary, provider, err := s.aiSummarizer.Summarize(context.Background(), content)
 			if err != nil {
 				errChan <- fmt.Errorf("AI error [%s]: %w", u, err)
 				return
@@ -112,7 +123,14 @@ func (s *newsService) SummarizeArticles(apiKey string, urls []string) ([]models.
 }
 
 func (s *newsService) scrapeContent(url string) (string, error) {
-	resp, err := http.Get(url)
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) NewsAggregator/1.0")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -138,73 +156,4 @@ func (s *newsService) scrapeContent(url string) (string, error) {
 	}
 
 	return text, nil
-}
-
-func (s *newsService) summarizeWithAI(content string) (string, string, error) {
-	apiURL := os.Getenv("OMNIROUTE_API_URL")
-	apiKey := os.Getenv("OMNIROUTE_API_KEY")
-
-	if apiURL == "" || apiKey == "" {
-		return "", "", fmt.Errorf("OmniRoute configuration missing in .env")
-	}
-
-	payload := map[string]interface{}{
-		"model": "best-template",
-		"messages": []map[string]string{
-			{"role": "system", "content": "You are a professional news summarizer. Provide a concise, engaging summary of the article in 2-3 sentences. Focus on the main point."},
-			{"role": "user", "content": content},
-		},
-		"temperature": 0.7,
-		"max_tokens":  300,
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return "", "", err
-	}
-
-	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(body))
-	if err != nil {
-		return "", "", err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", apiKey)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		log.Printf("OmniRoute error: status=%d url=%s body=%s", resp.StatusCode, apiURL, string(b))
-		return "", "", fmt.Errorf("AI API responded with status: %d", resp.StatusCode)
-	}
-
-	var aiResp struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&aiResp); err != nil {
-		return "", "", err
-	}
-
-	if len(aiResp.Choices) == 0 {
-		if aiResp.Error != nil && aiResp.Error.Message != "" {
-			return "", "", fmt.Errorf("AI returned error: %s", aiResp.Error.Message)
-		}
-		return "", "", fmt.Errorf("AI returned no response")
-	}
-
-	return aiResp.Choices[0].Message.Content, "OmniRoute", nil
 }

@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"os"
 
+	"news-aggregator/internal/ai"
 	deliveryHttp "news-aggregator/internal/delivery/http"
+	"news-aggregator/internal/middleware"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/repository"
 	"news-aggregator/internal/service"
-	"news-aggregator/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -41,23 +42,26 @@ func main() {
 
 	// Initialize Repository
 	repo := repository.NewPostgresRepository(db)
-	
+
+	// Initialize AI Summarizer (Groq -> NVIDIA NIM -> Google AI Studio -> Local-Fallback)
+	aiSummarizer := ai.NewDefaultSummarizer()
+
 	// Initialize Service
-	svc := service.NewNewsService(repo)
+	svc := service.NewNewsService(repo, aiSummarizer)
 
 	// Initialize Handler
 	handler := deliveryHttp.NewNewsHandler(svc)
 
 	// Gin Server
 	r := gin.Default()
-	
+
 	// Routes
 	api := r.Group("/api/v1")
 	{
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"status": "ok"})
 		})
-		
+
 		// Protected routes
 		protected := api.Group("/")
 		protected.Use(middleware.APIKeyAuth(svc))
@@ -65,7 +69,6 @@ func main() {
 			protected.POST("/summarize", handler.Summarize)
 		}
 	}
-
 
 	port := os.Getenv("PORT")
 	if port == "" {
