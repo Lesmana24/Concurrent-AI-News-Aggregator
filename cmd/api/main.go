@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	_ "news-aggregator/docs"
 	"news-aggregator/internal/ai"
@@ -16,7 +18,6 @@ import (
 	"news-aggregator/internal/repository"
 	"news-aggregator/internal/service"
 	"news-aggregator/internal/telegram"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -93,13 +94,22 @@ func main() {
 	telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN")
 	telegramEnabled := os.Getenv("TELEGRAM_BOT_ENABLED")
 	if strings.EqualFold(telegramEnabled, "true") && telegramToken != "" {
-		telegramBot, err := telegram.NewBotService(telegramToken, svc, repo)
-		if err != nil {
-			slog.Warn("Failed to start Telegram Bot", slog.String("error", err.Error()))
-		} else if telegramBot.IsEnabled() {
-			telegramBot.Start(context.Background())
-			slog.Info("Telegram Bot active and listening for messages")
-		}
+		go func() {
+			for attempt := 1; attempt <= 10; attempt++ {
+				telegramBot, err := telegram.NewBotService(telegramToken, svc, repo)
+				if err == nil && telegramBot.IsEnabled() {
+					telegramBot.Start(context.Background())
+					slog.Info("Telegram Bot active and listening for messages", slog.Int("attempt", attempt))
+					return
+				}
+				slog.Warn("Telegram Bot initialization attempt failed, retrying in 2s...",
+					slog.Int("attempt", attempt),
+					slog.Any("error", err),
+				)
+				time.Sleep(2 * time.Second)
+			}
+			slog.Error("Failed to start Telegram Bot after 10 attempts")
+		}()
 	}
 
 	// Initialize Handler with DB and Redis references for live health checks

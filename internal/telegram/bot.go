@@ -240,6 +240,8 @@ func (b *BotService) handleGlobalQA(ctx context.Context, chatID int64, question 
 				src.Similarity*100,
 			))
 		}
+	} else {
+		sb.WriteString("\n💡 <i>Tips: Tempelkan (paste) tautan berita terkait (Kompas, Detik, dll.) ke chat ini agar bot dapat membaca dan mengarsipkannya, sehingga Anda bisa menanyakannya secara detail!</i>\n")
 	}
 
 	sb.WriteString(fmt.Sprintf("\n<i>Penyedia AI: %s</i>", html.EscapeString(resp.Provider)))
@@ -254,7 +256,7 @@ func (b *BotService) handleSearch(ctx context.Context, chatID int64, query strin
 	}
 
 	if len(results) == 0 {
-		b.sendMessage(chatID, "🔍 Tidak ditemukan artikel yang cocok dengan konteks pencarian Anda.")
+		b.sendMessage(chatID, "🔍 <b>Tidak ditemukan artikel yang cocok di arsip berita.</b>\n\n💡 <i>Tips: Belum ada berita mengenai topik ini di database. Silakan tempelkan (paste) link berita langsung ke chat ini, dan bot akan otomatis membaca, merangkum, serta menyimpannya ke arsip semantik!</i>")
 		return
 	}
 
