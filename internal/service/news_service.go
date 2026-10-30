@@ -31,6 +31,7 @@ type Repository interface {
 	GetArticleByURL(url string) (*models.Article, error)
 	SaveArticleEmbedding(articleID uint, embedding []float32) error
 	SearchSimilarArticles(ctx context.Context, queryVector []float32, limit int, minSimilarity float64) ([]models.SemanticSearchResult, error)
+	SearchArticlesByKeyword(ctx context.Context, query string, limit int) ([]models.SemanticSearchResult, error)
 	HasVectorSupport() bool
 }
 
@@ -493,7 +494,8 @@ func hashURL(u string) string {
 	return hex.EncodeToString(h[:])
 }
 
-// SemanticSearch queries archived news using pgvector cosine similarity.
+// SemanticSearch queries archived news using pgvector cosine similarity,
+// with resilient fallback to keyword search if vector embeddings are unpopulated.
 func (s *newsService) SemanticSearch(ctx context.Context, query string, limit int) ([]models.SemanticSearchResult, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
@@ -506,18 +508,25 @@ func (s *newsService) SemanticSearch(ctx context.Context, query string, limit in
 		limit = 20
 	}
 
-	if s.embeddingSvc == nil {
-		return nil, fmt.Errorf("embedding service is not configured")
+	var results []models.SemanticSearchResult
+
+	// 1. Attempt Vector Similarity Search if embedding service and vector are available
+	if s.embeddingSvc != nil {
+		vec, err := s.embeddingSvc.GenerateEmbedding(ctx, query)
+		if err == nil && len(vec) > 0 {
+			vecResults, err := s.repo.SearchSimilarArticles(ctx, vec, limit, 0.20)
+			if err == nil && len(vecResults) > 0 {
+				results = vecResults
+			}
+		}
 	}
 
-	vec, err := s.embeddingSvc.GenerateEmbedding(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate query embedding: %w", err)
-	}
-
-	results, err := s.repo.SearchSimilarArticles(ctx, vec, limit, 0.20)
-	if err != nil {
-		return nil, fmt.Errorf("vector similarity search failed: %w", err)
+	// 2. Resilient fallback to keyword search if vector search yielded no results
+	if len(results) == 0 {
+		kwResults, err := s.repo.SearchArticlesByKeyword(ctx, query, limit)
+		if err == nil && len(kwResults) > 0 {
+			results = kwResults
+		}
 	}
 
 	return results, nil

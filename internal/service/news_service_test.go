@@ -87,6 +87,19 @@ func (m *MockRepository) SearchSimilarArticles(ctx context.Context, queryVector 
 	return args.Get(0).([]models.SemanticSearchResult), args.Error(1)
 }
 
+func (m *MockRepository) SearchArticlesByKeyword(ctx context.Context, query string, limit int) ([]models.SemanticSearchResult, error) {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == "SearchArticlesByKeyword" {
+			args := m.Called(ctx, query, limit)
+			if args.Get(0) == nil {
+				return nil, args.Error(1)
+			}
+			return args.Get(0).([]models.SemanticSearchResult), args.Error(1)
+		}
+	}
+	return nil, nil
+}
+
 func (m *MockRepository) HasVectorSupport() bool {
 	for _, call := range m.ExpectedCalls {
 		if call.Method == "HasVectorSupport" {

@@ -157,6 +157,54 @@ func (r *PostgresRepository) SearchSimilarArticles(ctx context.Context, queryVec
 	return results, err
 }
 
+// SearchArticlesByKeyword searches articles in PostgreSQL using ILIKE keywords as a fallback.
+func (r *PostgresRepository) SearchArticlesByKeyword(ctx context.Context, query string, limit int) ([]models.SemanticSearchResult, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	rawWords := strings.Fields(strings.ToLower(strings.TrimSpace(query)))
+	if len(rawWords) == 0 {
+		return nil, nil
+	}
+
+	// Filter out short stop words (e.g. "di", "ke", "dan", "yang") if multiple words exist
+	var words []string
+	for _, w := range rawWords {
+		if len(w) > 2 || len(rawWords) == 1 {
+			words = append(words, w)
+		}
+	}
+	if len(words) == 0 {
+		words = rawWords
+	}
+
+	var articles []models.Article
+	q := r.db.WithContext(ctx).Model(&models.Article{})
+	for _, w := range words {
+		pattern := "%" + w + "%"
+		q = q.Where("LOWER(title) LIKE ? OR LOWER(summary) LIKE ?", pattern, pattern)
+	}
+
+	err := q.Order("id DESC").Limit(limit).Find(&articles).Error
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]models.SemanticSearchResult, len(articles))
+	for i, a := range articles {
+		results[i] = models.SemanticSearchResult{
+			ArticleID:  a.ID,
+			Title:      a.Title,
+			URL:        a.URL,
+			Summary:    a.Summary,
+			Source:     a.Source,
+			Similarity: 0.80,
+		}
+	}
+
+	return results, nil
+}
+
 // EnsureSystemUser creates or retrieves a system user for background/bot operations.
 func (r *PostgresRepository) EnsureSystemUser(apiKey, email string, defaultQuota int) (*models.User, error) {
 	var user models.User
