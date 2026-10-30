@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	_ "news-aggregator/docs"
 	"news-aggregator/internal/ai"
@@ -13,6 +15,7 @@ import (
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/repository"
 	"news-aggregator/internal/service"
+	"news-aggregator/internal/telegram"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -64,7 +67,7 @@ func main() {
 	}
 
 	// AutoMigrate
-	err = db.AutoMigrate(&models.User{}, &models.Article{})
+	err = db.AutoMigrate(&models.User{}, &models.Article{}, &models.TelegramSubscription{})
 	if err != nil {
 		slog.Error("Database migration failed", slog.String("error", err.Error()))
 		os.Exit(1)
@@ -85,6 +88,19 @@ func main() {
 
 	// Initialize Service with L1 Cache
 	svc := service.NewNewsService(repo, aiService).WithCache(redisCache)
+
+	// Initialize Telegram Bot Service (Two-Way Interactive Chat & Push Notifications)
+	telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	telegramEnabled := os.Getenv("TELEGRAM_BOT_ENABLED")
+	if strings.EqualFold(telegramEnabled, "true") && telegramToken != "" {
+		telegramBot, err := telegram.NewBotService(telegramToken, svc, repo)
+		if err != nil {
+			slog.Warn("Failed to start Telegram Bot", slog.String("error", err.Error()))
+		} else if telegramBot.IsEnabled() {
+			telegramBot.Start(context.Background())
+			slog.Info("Telegram Bot active and listening for messages")
+		}
+	}
 
 	// Initialize Handler with DB and Redis references for live health checks
 	handler := deliveryHttp.NewNewsHandler(svc, db).WithCache(redisCache)

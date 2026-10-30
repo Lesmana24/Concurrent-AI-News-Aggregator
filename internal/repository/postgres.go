@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"news-aggregator/internal/models"
+	"strings"
 
 	"github.com/pgvector/pgvector-go"
 	"gorm.io/gorm"
@@ -154,4 +155,62 @@ func (r *PostgresRepository) SearchSimilarArticles(ctx context.Context, queryVec
 	`, vecStr, vecStr, minSimilarity, limit).Scan(&results).Error
 
 	return results, err
+}
+
+// EnsureSystemUser creates or retrieves a system user for background/bot operations.
+func (r *PostgresRepository) EnsureSystemUser(apiKey, email string, defaultQuota int) (*models.User, error) {
+	var user models.User
+	err := r.db.Where("api_key = ?", apiKey).First(&user).Error
+	if err == nil {
+		if user.Quota < 100 {
+			_ = r.db.Model(&user).Update("quota", defaultQuota).Error
+			user.Quota = defaultQuota
+		}
+		return &user, nil
+	}
+
+	user = models.User{
+		APIKey: apiKey,
+		Email:  email,
+		Quota:  defaultQuota,
+	}
+	if err := r.db.Create(&user).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// SubscribeTelegram activates or adds a telegram chat subscription for a topic.
+func (r *PostgresRepository) SubscribeTelegram(chatID int64, topic string) error {
+	topic = strings.TrimSpace(strings.ToLower(topic))
+	if topic == "" {
+		topic = "berita"
+	}
+
+	var sub models.TelegramSubscription
+	err := r.db.Where("chat_id = ? AND topic = ?", chatID, topic).First(&sub).Error
+	if err == nil {
+		return r.db.Model(&sub).Update("is_active", true).Error
+	}
+
+	sub = models.TelegramSubscription{
+		ChatID:   chatID,
+		Topic:    topic,
+		IsActive: true,
+	}
+	return r.db.Create(&sub).Error
+}
+
+// UnsubscribeTelegram deactivates all subscriptions for a chat ID.
+func (r *PostgresRepository) UnsubscribeTelegram(chatID int64) error {
+	return r.db.Model(&models.TelegramSubscription{}).
+		Where("chat_id = ?", chatID).
+		Update("is_active", false).Error
+}
+
+// GetActiveTelegramSubscriptions retrieves all active subscriptions.
+func (r *PostgresRepository) GetActiveTelegramSubscriptions() ([]models.TelegramSubscription, error) {
+	var subs []models.TelegramSubscription
+	err := r.db.Where("is_active = ?", true).Find(&subs).Error
+	return subs, err
 }

@@ -8,7 +8,8 @@
 [![Cache](https://img.shields.io/badge/Cache-Redis%20L1-DC382D?style=flat&logo=redis&logoColor=white)](https://redis.io/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
 [![AI Providers](https://img.shields.io/badge/AI%20Providers-Groq%20%7C%20NVIDIA%20NIM%20%7C%20Gemini-7B32F5?style=flat)](https://groq.com)
-[![Status](https://img.shields.io/badge/Project%20Status-Production%20Ready%20(Phase%207%20Completed)-success)](#)
+[![Telegram Bot](https://img.shields.io/badge/Telegram%20Bot-@PengumpulBeritaBot-26A5E4?style=flat&logo=telegram&logoColor=white)](https://t.me/PengumpulBeritaBot)
+[![Status](https://img.shields.io/badge/Project%20Status-Production%20Ready%20(Telegram%20AI%20Bot%20Active)-success)](#)
 
 **Concurrent AI News Aggregator** adalah layanan REST API backend performa tinggi berbasis **Golang** yang dirancang untuk melakukan *web scraping*, ekstraksi teks berita cerdas, peringkasan artikel secara paralel (**Fan-Out/Fan-In Goroutines**), serta fitur **Tanya Jawab Berita (News Q&A)** dengan batasan topik (*strict topic guardrails*).
 
@@ -626,6 +627,28 @@ Membandingkan 2 hingga 5 artikel berita dari berbagai portal media berbeda menge
   "provider": "Groq"
 }
 ```
+
+---
+
+## 🤖 Integrasi Telegram Bot (@PengumpulBeritaBot)
+
+Backend ini terintegrasi penuh dengan **Telegram Bot interaktif 24/7** ([@PengumpulBeritaBot](https://t.me/PengumpulBeritaBot)) yang berjalan secara asinkronus menggunakan arsitektur *Long Polling* performa tinggi tanpa memerlukan domain publik.
+
+### 🌟 Fitur Utama Bot Telegram:
+1. **Chatting Interaktif (Two-Way Conversational Q&A):**
+   * Pengguna dapat bertanya topik berita apa saja langsung di obrolan Telegram.
+   * Bot menampilkan indikator animasi *"typing..."* dan menjawab menggunakan **Global RAG (`pgvector`)** lengkap dengan sitasi tautan sumber berita asli.
+2. **Ringkasan Tautan Instan (URL Drop):**
+   * Kirim langsung link berita dari portal mana saja (Kompas, Detik, Tempo, Antara, dll.).
+   * Bot secara cerdas mengekstrak artikel dan membalas dengan ringkasan 3 kalimat padat.
+3. **Pencarian Semantik (`/search <kata kunci>`):**
+   * Mencari arsip berita berdasarkan konteks makna menggunakan *vector similarity search*.
+4. **Analisis Bias Media (`/compare <url1> <url2>`):**
+   * Membandingkan perbedaan sudut pandang dua portal berita yang meliput peristiwa yang sama.
+5. **Scheduled Morning Briefing & Notifikasi:**
+   * `/subscribe <topik>` untuk berlangganan ringkasan berita harian.
+   * `/briefing` untuk meminta eksekutif summary berita terkini kapan saja.
+   * `/unsubscribe` untuk berhenti menerima notifikasi.
 
 ---
 
