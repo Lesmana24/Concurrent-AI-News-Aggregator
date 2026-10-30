@@ -54,7 +54,7 @@ func TestModelResolver_AutoSelectNvidiaModel(t *testing.T) {
 	resolver := NewModelResolver(time.Minute)
 	resolved := resolver.ResolveModel(context.Background(), mockServer.URL, "test-key", "nvidia", "auto")
 
-	assert.Equal(t, "meta/llama-3.3-70b-instruct", resolved)
+	assert.Equal(t, "meta/llama-3.1-8b-instruct", resolved)
 }
 
 func TestModelResolver_AutoSelectGeminiModel(t *testing.T) {
@@ -81,6 +81,6 @@ func TestModelResolver_StaticFallbackWhenServerFails(t *testing.T) {
 	resolver := NewModelResolver(time.Minute)
 	// Invalid port to trigger error
 	resolved := resolver.ResolveModel(context.Background(), "http://127.0.0.1:59999/models", "key", "groq", "auto")
-	assert.Equal(t, "llama-3.3-70b-versatile", resolved)
+	assert.Equal(t, "qwen/qwen3.8-27b", resolved)
 }
 

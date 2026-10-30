@@ -147,9 +147,8 @@ func (r *ModelResolver) selectBestModel(providerType string, availableIDs []stri
 		}
 
 		prefixes := []string{
-			"llama-3.3", "llama-3.1", "llama3",
-			"openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b",
-			"qwen", "gpt-oss", "mixtral",
+			"qwen/qwen3.8-27b", "qwen", "llama-3.3", "llama-3.1", "llama3",
+			"openai/gpt-oss-120b", "openai/gpt-oss-20b", "allam", "mixtral",
 		}
 		for _, prefix := range prefixes {
 			for _, id := range cleanIDs {
@@ -177,8 +176,8 @@ func (r *ModelResolver) selectBestModel(providerType string, availableIDs []stri
 		}
 
 		prefixes := []string{
-			"meta/llama-3.3", "meta/llama-3.1", "nvidia/llama-3.1-nemotron-70b-instruct",
-			"mistralai/mistral-large-2-instruct", "mistralai/mistral-7b-instruct-v0.3",
+			"meta/llama-3.1-8b-instruct", "meta/llama-3.3-70b-instruct",
+			"mistralai/mistral-7b-instruct-v0.3", "mistralai/mistral-large-2-instruct",
 			"google/gemma-3-12b-it", "deepseek-ai/deepseek-v4.1-flash", "meta/llama3",
 		}
 		for _, prefix := range prefixes {
@@ -206,7 +205,7 @@ func (r *ModelResolver) selectBestModel(providerType string, availableIDs []stri
 			return true
 		}
 
-		prefixes := []string{"gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-flash-latest", "gemini-2.0-flash", "gemini-1.5-flash", "gemini"}
+		prefixes := []string{"gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini"}
 		for _, prefix := range prefixes {
 			for _, id := range cleanIDs {
 				if isAllowed(id) && strings.Contains(strings.ToLower(id), prefix) {
@@ -227,11 +226,11 @@ func (r *ModelResolver) selectBestModel(providerType string, availableIDs []stri
 func (r *ModelResolver) getStaticFallbackModel(providerType string) string {
 	switch strings.ToLower(providerType) {
 	case "groq":
-		return "llama-3.3-70b-versatile"
+		return "qwen/qwen3.8-27b"
 	case "nvidia":
 		return "meta/llama-3.1-8b-instruct"
 	case "gemini":
-		return "gemini-3.8-flash"
+		return "gemini-flash-latest"
 	default:
 		return "default"
 	}

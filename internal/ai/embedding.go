@@ -7,11 +7,13 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,16 +22,19 @@ type EmbeddingService interface {
 	GenerateEmbedding(ctx context.Context, text string) ([]float32, error)
 }
 
-// GeminiEmbeddingClient integrates with Google AI Studio text-embedding-004.
+// GeminiEmbeddingClient integrates with Google AI Studio text embedding models (gemini-embedding-001 / gemini-embedding-2).
 type GeminiEmbeddingClient struct {
 	apiKey     string
 	model      string
+	candidates []string
 	httpClient *http.Client
+	mu         sync.RWMutex
 }
 
 type geminiEmbedRequest struct {
-	Model   string       `json:"model"`
-	Content geminiEmbedContent `json:"content"`
+	Model                string             `json:"model"`
+	Content              geminiEmbedContent `json:"content"`
+	OutputDimensionality int                `json:"outputDimensionality,omitempty"`
 }
 
 type geminiEmbedContent struct {
@@ -51,10 +56,26 @@ type geminiEmbedResponse struct {
 }
 
 // NewGeminiEmbeddingClient creates an embedding client using Google AI Studio.
+// Automatically chooses the best working embedding model among supported Gemini models.
 func NewGeminiEmbeddingClient(apiKey string) *GeminiEmbeddingClient {
+	preferredModel := os.Getenv("GEMINI_EMBEDDING_MODEL")
+	if preferredModel == "" {
+		preferredModel = "models/gemini-embedding-001"
+	} else if !strings.HasPrefix(preferredModel, "models/") {
+		preferredModel = "models/" + preferredModel
+	}
+
+	candidates := []string{
+		preferredModel,
+		"models/gemini-embedding-001",
+		"models/gemini-embedding-2",
+		"models/text-embedding-004",
+	}
+
 	return &GeminiEmbeddingClient{
-		apiKey: apiKey,
-		model:  "models/text-embedding-004",
+		apiKey:     apiKey,
+		model:      preferredModel,
+		candidates: candidates,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -66,9 +87,48 @@ func (c *GeminiEmbeddingClient) GenerateEmbedding(ctx context.Context, text stri
 		return nil, fmt.Errorf("text cannot be empty")
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s:embedContent?key=%s", c.model, c.apiKey)
+	c.mu.RLock()
+	currentModel := c.model
+	candidates := make([]string, 0, len(c.candidates))
+	candidates = append(candidates, currentModel)
+	for _, cand := range c.candidates {
+		if cand != currentModel {
+			candidates = append(candidates, cand)
+		}
+	}
+	c.mu.RUnlock()
+
+	var lastErr error
+	for _, modelName := range candidates {
+		vec, err := c.tryEmbed(ctx, modelName, text)
+		if err == nil {
+			c.mu.Lock()
+			if c.model != modelName {
+				log.Printf("[Embedding] Switched Gemini embedding model to: %s", modelName)
+				c.model = modelName
+			}
+			c.mu.Unlock()
+			return vec, nil
+		}
+
+		lastErr = err
+		// If 404 / model not found or unsupported method, try next candidate
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "not supported") {
+			continue
+		}
+		// If non-model error (e.g. context canceled or fatal auth), return immediately
+		break
+	}
+
+	return nil, lastErr
+}
+
+func (c *GeminiEmbeddingClient) tryEmbed(ctx context.Context, modelName, text string) ([]float32, error) {
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s:embedContent?key=%s", modelName, c.apiKey)
 	reqBody := geminiEmbedRequest{
-		Model: c.model,
+		Model:                modelName,
+		OutputDimensionality: 768,
 		Content: geminiEmbedContent{
 			Parts: []geminiEmbedPart{{Text: text}},
 		},
@@ -100,11 +160,32 @@ func (c *GeminiEmbeddingClient) GenerateEmbedding(ctx context.Context, text stri
 		return nil, fmt.Errorf("gemini embedding api error (%d): %s", embedResp.Error.Code, embedResp.Error.Message)
 	}
 
-	if len(embedResp.Embedding.Values) == 0 {
+	vals := embedResp.Embedding.Values
+	if len(vals) == 0 {
 		return nil, fmt.Errorf("empty embedding returned from gemini api")
 	}
 
-	return embedResp.Embedding.Values, nil
+	// Guarantee 768 dimensions for pgvector vector(768)
+	if len(vals) > 768 {
+		vals = vals[:768]
+		// L2 re-normalization
+		var sumSq float64
+		for _, v := range vals {
+			sumSq += float64(v * v)
+		}
+		norm := math.Sqrt(sumSq)
+		if norm > 0 {
+			for i := range vals {
+				vals[i] = float32(float64(vals[i]) / norm)
+			}
+		}
+	} else if len(vals) < 768 {
+		padded := make([]float32, 768)
+		copy(padded, vals)
+		vals = padded
+	}
+
+	return vals, nil
 }
 
 // MockEmbeddingService creates deterministic normalized vector embeddings (default 768 dimensions)
@@ -150,14 +231,45 @@ func (m *MockEmbeddingService) GenerateEmbedding(ctx context.Context, text strin
 	return vec, nil
 }
 
-// NewDefaultEmbeddingService initializes GeminiEmbeddingClient if GEMINI_API_KEY is present,
-// otherwise returns MockEmbeddingService.
+// ResilientEmbeddingService wraps a primary and fallback embedding service.
+// If the primary fails (e.g. rate limit, 404, or network issue), it transparently
+// falls back to the deterministic secondary embedding service so queries never crash.
+type ResilientEmbeddingService struct {
+	primary  EmbeddingService
+	fallback EmbeddingService
+}
+
+func NewResilientEmbeddingService(primary, fallback EmbeddingService) *ResilientEmbeddingService {
+	return &ResilientEmbeddingService{
+		primary:  primary,
+		fallback: fallback,
+	}
+}
+
+func (r *ResilientEmbeddingService) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
+	if r.primary != nil {
+		vec, err := r.primary.GenerateEmbedding(ctx, text)
+		if err == nil && len(vec) == 768 {
+			return vec, nil
+		}
+		log.Printf("[Embedding] Warning: primary embedding service failed (%v). Falling back to resilient local embedding.", err)
+	}
+	if r.fallback != nil {
+		return r.fallback.GenerateEmbedding(ctx, text)
+	}
+	return nil, fmt.Errorf("no embedding service available")
+}
+
+// NewDefaultEmbeddingService initializes GeminiEmbeddingClient with Resilient fallback
+// if GEMINI_API_KEY is present, otherwise returns MockEmbeddingService.
 func NewDefaultEmbeddingService() EmbeddingService {
+	mock := NewMockEmbeddingService(768)
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey != "" && !strings.EqualFold(apiKey, "mock") {
-		return NewGeminiEmbeddingClient(apiKey)
+		geminiClient := NewGeminiEmbeddingClient(apiKey)
+		return NewResilientEmbeddingService(geminiClient, mock)
 	}
-	return NewMockEmbeddingService(768)
+	return mock
 }
 
 // CosineSimilarity computes cosine similarity between two float32 vectors.
@@ -176,4 +288,3 @@ func CosineSimilarity(a, b []float32) float64 {
 	}
 	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
 }
-

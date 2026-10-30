@@ -3,9 +3,11 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -48,10 +50,27 @@ func TestMockEmbeddingService_DeterministicAndNormalized(t *testing.T) {
 	}
 }
 
-func TestGeminiEmbeddingClient_Success(t *testing.T) {
+func TestGeminiEmbeddingClient_CandidateFailover(t *testing.T) {
+	attempt := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt++
+		if strings.Contains(r.URL.Path, "text-embedding-004") {
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"code":    404,
+					"message": "models/text-embedding-004 is not found for API version v1beta",
+				},
+			})
+			return
+		}
+
 		resp := geminiEmbedResponse{}
-		resp.Embedding.Values = []float32{0.1, 0.2, 0.3}
+		// Return 1000 items to test 768-dimension truncation and normalization
+		resp.Embedding.Values = make([]float32, 1000)
+		for i := range resp.Embedding.Values {
+			resp.Embedding.Values[i] = 1.0
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -59,23 +78,44 @@ func TestGeminiEmbeddingClient_Success(t *testing.T) {
 
 	client := NewGeminiEmbeddingClient("dummy-key")
 	client.httpClient = ts.Client()
-	// Mock URL target via client
+	client.candidates = []string{"models/text-embedding-004", "models/gemini-embedding-001"}
 	client.model = "models/text-embedding-004"
 
-	// Directly invoke HTTP request to test parsing
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL, nil)
-	resp, err := client.httpClient.Do(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	defer resp.Body.Close()
+	// Point client to test server using DefaultTransport to avoid recursion
+	defaultTransport := http.DefaultTransport
+	client.httpClient.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		req.URL.Scheme = "http"
+		req.URL.Host = ts.Listener.Addr().String()
+		return defaultTransport.RoundTrip(req)
+	})
 
-	var embedResp geminiEmbedResponse
-	if err := json.NewDecoder(resp.Body).Decode(&embedResp); err != nil {
-		t.Fatalf("decode failed: %v", err)
+	vec, err := client.GenerateEmbedding(context.Background(), "berita demo")
+	if err != nil {
+		t.Fatalf("expected candidate failover to succeed, got error: %v", err)
 	}
-	if len(embedResp.Embedding.Values) != 3 {
-		t.Fatalf("expected 3 values, got %d", len(embedResp.Embedding.Values))
+
+	if len(vec) != 768 {
+		t.Fatalf("expected vector to be resized to 768, got %d", len(vec))
+	}
+
+	if client.model != "models/gemini-embedding-001" {
+		t.Fatalf("expected active model to switch to gemini-embedding-001, got %s", client.model)
+	}
+}
+
+func TestResilientEmbeddingService_FallbackToMock(t *testing.T) {
+	failingPrimary := &failingEmbeddingService{}
+	mockFallback := NewMockEmbeddingService(768)
+
+	resilient := NewResilientEmbeddingService(failingPrimary, mockFallback)
+
+	vec, err := resilient.GenerateEmbedding(context.Background(), "berita ekonomi")
+	if err != nil {
+		t.Fatalf("expected resilient embedding to succeed with fallback, got: %v", err)
+	}
+
+	if len(vec) != 768 {
+		t.Fatalf("expected 768 dimensions, got %d", len(vec))
 	}
 }
 
@@ -96,3 +136,14 @@ func TestCosineSimilarity(t *testing.T) {
 	}
 }
 
+type roundTripperFunc func(req *http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type failingEmbeddingService struct{}
+
+func (f *failingEmbeddingService) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
+	return nil, errors.New("gemini embedding api error (404): models/text-embedding-004 is not found")
+}

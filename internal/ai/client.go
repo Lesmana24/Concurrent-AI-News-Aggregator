@@ -122,7 +122,8 @@ type chatMessage struct {
 type chatResponse struct {
 	Choices []struct {
 		Message struct {
-			Content string `json:"content"`
+			Content   string `json:"content"`
+			Reasoning string `json:"reasoning,omitempty"`
 		} `json:"message"`
 	} `json:"choices"`
 	Error *struct {
@@ -240,11 +241,20 @@ func (c *OpenAICompatibleClient) executeChat(ctx context.Context, sysPrompt, use
 		return "", fmt.Errorf("%s error: %s", c.providerName, parsedResp.Error.Message)
 	}
 
-	if len(parsedResp.Choices) == 0 || parsedResp.Choices[0].Message.Content == "" {
+	if len(parsedResp.Choices) == 0 {
 		return "", fmt.Errorf("%s returned an empty response", c.providerName)
 	}
 
-	return strings.TrimSpace(parsedResp.Choices[0].Message.Content), nil
+	content := parsedResp.Choices[0].Message.Content
+	if strings.TrimSpace(content) == "" && strings.TrimSpace(parsedResp.Choices[0].Message.Reasoning) != "" {
+		content = parsedResp.Choices[0].Message.Reasoning
+	}
+
+	if strings.TrimSpace(content) == "" {
+		return "", fmt.Errorf("%s returned an empty response", c.providerName)
+	}
+
+	return strings.TrimSpace(content), nil
 }
 
 func (c *OpenAICompatibleClient) executeChatStream(ctx context.Context, sysPrompt, userMsg string, maxTokens int, outChan chan<- string) error {
