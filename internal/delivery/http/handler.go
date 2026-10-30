@@ -26,7 +26,7 @@ func (h *NewsHandler) Summarize(c *gin.Context) {
 	}
 
 	apiKey := c.GetHeader("X-API-KEY")
-	res, err := h.service.SummarizeArticles(apiKey, req.URLs)
+	res, err := h.service.SummarizeArticles(c.Request.Context(), apiKey, req.URLs)
 	if err != nil {
 		if strings.Contains(err.Error(), "validation failed") || strings.Contains(err.Error(), "no valid") {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -51,7 +51,7 @@ func (h *NewsHandler) QA(c *gin.Context) {
 	}
 
 	apiKey := c.GetHeader("X-API-KEY")
-	res, err := h.service.AnswerQuestion(apiKey, req)
+	res, err := h.service.AnswerQuestion(c.Request.Context(), apiKey, req)
 	if err != nil {
 		if strings.Contains(err.Error(), "validation failed") || strings.Contains(err.Error(), "no valid") {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

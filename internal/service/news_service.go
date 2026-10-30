@@ -12,24 +12,33 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"golang.org/x/sync/singleflight"
 )
 
 type Repository interface {
 	GetUserByKey(apiKey string) (*models.User, error)
 	UpdateUserQuota(userID uint, newQuota int) error
+	DeductUserQuota(userID uint, amount int) (bool, error)
+	RefundUserQuota(userID uint, amount int) error
 	BatchInsertArticles(articles []models.Article) error
 	GetCachedArticles(url string) ([]models.Article, error)
 }
 
 type NewsService interface {
-	SummarizeArticles(apiKey string, urls []string) ([]models.ArticleResponse, error)
-	AnswerQuestion(apiKey string, req models.NewsQARequest) (*models.NewsQAResponse, error)
+	SummarizeArticles(ctx context.Context, apiKey string, urls []string) ([]models.ArticleResponse, error)
+	AnswerQuestion(ctx context.Context, apiKey string, req models.NewsQARequest) (*models.NewsQAResponse, error)
 	GetUser(apiKey string) (*models.User, error)
 }
 
 type newsService struct {
 	repo      Repository
 	aiService ai.AIService
+	sfGroup   singleflight.Group
+}
+
+type ScrapedArticle struct {
+	Title   string
+	Content string
 }
 
 // NewNewsService creates a new NewsService with the specified repository and optional AI service.
@@ -51,19 +60,24 @@ func (s *newsService) GetUser(apiKey string) (*models.User, error) {
 	return s.repo.GetUserByKey(apiKey)
 }
 
-func (s *newsService) SummarizeArticles(apiKey string, urls []string) ([]models.ArticleResponse, error) {
+func (s *newsService) SummarizeArticles(ctx context.Context, apiKey string, urls []string) ([]models.ArticleResponse, error) {
 	user, err := s.GetUser(apiKey)
 	if err != nil {
 		return nil, fmt.Errorf("authentication failed: %w", err)
 	}
 
-	if user.Quota <= 0 {
-		return nil, fmt.Errorf("quota exceeded")
-	}
-
 	validURLs, err := FilterURLs(urls, 10)
 	if err != nil {
 		return nil, fmt.Errorf("URL validation failed: %w", err)
+	}
+
+	// Atomic Quota Deduction Upfront to prevent race conditions
+	deducted, err := s.repo.DeductUserQuota(user.ID, len(validURLs))
+	if err != nil {
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+	if !deducted {
+		return nil, fmt.Errorf("quota exceeded")
 	}
 
 	resultsChan := make(chan models.ArticleResponse, len(validURLs))
@@ -75,35 +89,13 @@ func (s *newsService) SummarizeArticles(apiKey string, urls []string) ([]models.
 		go func(u string) {
 			defer wg.Done()
 
-			content, err := s.getOrFetchArticleContent(u)
+			res, err := s.getOrProcessArticle(ctx, u)
 			if err != nil {
 				errChan <- fmt.Errorf("error processing [%s]: %w", u, err)
 				return
 			}
 
-			summary, provider, err := s.aiService.Summarize(context.Background(), content)
-			if err != nil {
-				errChan <- fmt.Errorf("AI error [%s]: %w", u, err)
-				return
-			}
-
-			article := models.Article{
-				URL:         u,
-				Content:     content,
-				Summary:     summary,
-				AIProvider:  provider,
-				PublishedAt: time.Now(),
-			}
-			if err := s.repo.BatchInsertArticles([]models.Article{article}); err != nil {
-				log.Printf("Warning: failed to cache article %s: %v", u, err)
-			}
-
-			resultsChan <- models.ArticleResponse{
-				Title:   "Summarized Article",
-				URL:     u,
-				Summary: summary,
-				Source:  provider,
-			}
+			resultsChan <- *res
 		}(url)
 	}
 
@@ -116,12 +108,12 @@ func (s *newsService) SummarizeArticles(apiKey string, urls []string) ([]models.
 		finalResults = append(finalResults, res)
 	}
 
-	newQuota := user.Quota - len(validURLs)
-	if newQuota < 0 {
-		newQuota = 0
-	}
-	if err := s.repo.UpdateUserQuota(user.ID, newQuota); err != nil {
-		log.Printf("Error updating quota for user %d: %v", user.ID, err)
+	// Refund quota for failed URLs
+	failedCount := len(validURLs) - len(finalResults)
+	if failedCount > 0 {
+		if err := s.repo.RefundUserQuota(user.ID, failedCount); err != nil {
+			log.Printf("Warning: failed to refund %d quota to user %d: %v", failedCount, user.ID, err)
+		}
 	}
 
 	if len(finalResults) == 0 && len(errChan) > 0 {
@@ -131,14 +123,10 @@ func (s *newsService) SummarizeArticles(apiKey string, urls []string) ([]models.
 	return finalResults, nil
 }
 
-func (s *newsService) AnswerQuestion(apiKey string, req models.NewsQARequest) (*models.NewsQAResponse, error) {
+func (s *newsService) AnswerQuestion(ctx context.Context, apiKey string, req models.NewsQARequest) (*models.NewsQAResponse, error) {
 	user, err := s.GetUser(apiKey)
 	if err != nil {
 		return nil, fmt.Errorf("authentication failed: %w", err)
-	}
-
-	if user.Quota <= 0 {
-		return nil, fmt.Errorf("quota exceeded")
 	}
 
 	validURLs, err := FilterURLs(req.URLs, 5)
@@ -146,10 +134,26 @@ func (s *newsService) AnswerQuestion(apiKey string, req models.NewsQARequest) (*
 		return nil, fmt.Errorf("URL validation failed: %w", err)
 	}
 
+	// Atomic Quota Deduction Upfront (1 quota per QA question)
+	deducted, err := s.repo.DeductUserQuota(user.ID, 1)
+	if err != nil {
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+	if !deducted {
+		return nil, fmt.Errorf("quota exceeded")
+	}
+
+	refundOnFailure := func() {
+		if err := s.repo.RefundUserQuota(user.ID, 1); err != nil {
+			log.Printf("Warning: failed to refund quota to user %d: %v", user.ID, err)
+		}
+	}
+
 	var contextBuilder strings.Builder
 	for idx, u := range validURLs {
-		content, err := s.getOrFetchArticleContent(u)
+		title, content, err := s.getOrFetchArticleContent(ctx, u)
 		if err != nil {
+			refundOnFailure()
 			return nil, fmt.Errorf("failed to retrieve content from [%s]: %w", u, err)
 		}
 
@@ -158,21 +162,13 @@ func (s *newsService) AnswerQuestion(apiKey string, req models.NewsQARequest) (*
 			content = content[:4000] + "..."
 		}
 
-		contextBuilder.WriteString(fmt.Sprintf("\n--- ARTIKEL [%d] (URL: %s) ---\n%s\n", idx+1, u, content))
+		contextBuilder.WriteString(fmt.Sprintf("\n--- ARTIKEL [%d]: %s (URL: %s) ---\n%s\n", idx+1, title, u, content))
 	}
 
-	answer, provider, err := s.aiService.AnswerQuestion(context.Background(), contextBuilder.String(), req.Question)
+	answer, provider, err := s.aiService.AnswerQuestion(ctx, contextBuilder.String(), req.Question)
 	if err != nil {
+		refundOnFailure()
 		return nil, fmt.Errorf("AI Q&A failed: %w", err)
-	}
-
-	// Deduct 1 quota per question
-	newQuota := user.Quota - 1
-	if newQuota < 0 {
-		newQuota = 0
-	}
-	if err := s.repo.UpdateUserQuota(user.ID, newQuota); err != nil {
-		log.Printf("Error updating quota for user %d: %v", user.ID, err)
 	}
 
 	return &models.NewsQAResponse{
@@ -183,51 +179,157 @@ func (s *newsService) AnswerQuestion(apiKey string, req models.NewsQARequest) (*
 	}, nil
 }
 
-func (s *newsService) getOrFetchArticleContent(url string) (string, error) {
+func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*models.ArticleResponse, error) {
+	// 1. Direct cache-first check
+	cached, err := s.repo.GetCachedArticles(url)
+	if err == nil && len(cached) > 0 && strings.TrimSpace(cached[0].Summary) != "" {
+		return &models.ArticleResponse{
+			Title:   cached[0].Title,
+			URL:     cached[0].URL,
+			Summary: cached[0].Summary,
+			Source:  cached[0].AIProvider + " (Cached)",
+		}, nil
+	}
+
+	// 2. Singleflight deduplication to prevent cache stampede
+	val, err, _ := s.sfGroup.Do(url, func() (interface{}, error) {
+		// Double-check cache in case another flight just finished
+		cached, err := s.repo.GetCachedArticles(url)
+		if err == nil && len(cached) > 0 && strings.TrimSpace(cached[0].Summary) != "" {
+			return &models.ArticleResponse{
+				Title:   cached[0].Title,
+				URL:     cached[0].URL,
+				Summary: cached[0].Summary,
+				Source:  cached[0].AIProvider + " (Cached)",
+			}, nil
+		}
+
+		var title, content string
+		if len(cached) > 0 && strings.TrimSpace(cached[0].Content) != "" {
+			title = cached[0].Title
+			content = cached[0].Content
+		} else {
+			scraped, err := s.scrapeArticle(ctx, url)
+			if err != nil {
+				return nil, err
+			}
+			title = scraped.Title
+			content = scraped.Content
+		}
+
+		summary, provider, err := s.aiService.Summarize(ctx, content)
+		if err != nil {
+			return nil, fmt.Errorf("AI error [%s]: %w", url, err)
+		}
+
+		article := models.Article{
+			Title:       title,
+			URL:         url,
+			Content:     content,
+			Summary:     summary,
+			AIProvider:  provider,
+			PublishedAt: time.Now(),
+		}
+		if err := s.repo.BatchInsertArticles([]models.Article{article}); err != nil {
+			log.Printf("Warning: failed to cache article %s: %v", url, err)
+		}
+
+		return &models.ArticleResponse{
+			Title:   title,
+			URL:     url,
+			Summary: summary,
+			Source:  provider,
+		}, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	res := val.(*models.ArticleResponse)
+	return res, nil
+}
+
+func (s *newsService) getOrFetchArticleContent(ctx context.Context, url string) (string, string, error) {
 	// 1. Cache-first lookup
 	cached, err := s.repo.GetCachedArticles(url)
 	if err == nil && len(cached) > 0 && strings.TrimSpace(cached[0].Content) != "" {
-		return cached[0].Content, nil
+		return cached[0].Title, cached[0].Content, nil
 	}
 
-	// 2. Fetch via scraper
-	content, err := s.scrapeContent(url)
+	// 2. Singleflight content fetch
+	val, err, _ := s.sfGroup.Do("content:"+url, func() (interface{}, error) {
+		cached, err := s.repo.GetCachedArticles(url)
+		if err == nil && len(cached) > 0 && strings.TrimSpace(cached[0].Content) != "" {
+			return cached[0], nil
+		}
+
+		scraped, err := s.scrapeArticle(ctx, url)
+		if err != nil {
+			return nil, err
+		}
+
+		article := models.Article{
+			Title:       scraped.Title,
+			URL:         url,
+			Content:     scraped.Content,
+			PublishedAt: time.Now(),
+		}
+		if err := s.repo.BatchInsertArticles([]models.Article{article}); err != nil {
+			log.Printf("Warning: failed to cache article content for %s: %v", url, err)
+		}
+
+		return article, nil
+	})
+
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	if len(strings.TrimSpace(content)) < 80 {
-		return "", fmt.Errorf("insufficient readable content found (possibly paywalled or anti-bot protected)")
-	}
-
-	return content, nil
+	art := val.(models.Article)
+	return art.Title, art.Content, nil
 }
 
-func (s *newsService) scrapeContent(url string) (string, error) {
+func (s *newsService) scrapeArticle(ctx context.Context, url string) (*ScrapedArticle, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 NewsAggregator/1.0")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("http error: %d", resp.StatusCode)
+		return nil, fmt.Errorf("http error: %d", resp.StatusCode)
 	}
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	// Strip out non-content elements
-	doc.Find("script, style, nav, footer, header, aside, noscript, .advertisement, .ads").Remove()
+	// 1. Extract Real Title
+	title := strings.TrimSpace(doc.Find(`meta[property="og:title"]`).AttrOr("content", ""))
+	if title == "" {
+		title = strings.TrimSpace(doc.Find(`meta[name="twitter:title"]`).AttrOr("content", ""))
+	}
+	if title == "" {
+		title = strings.TrimSpace(doc.Find("h1").First().Text())
+	}
+	if title == "" {
+		title = strings.TrimSpace(doc.Find("title").First().Text())
+	}
+	if title == "" {
+		title = "Summarized Article"
+	}
+
+	// 2. Strip non-content elements
+	doc.Find("script, style, nav, footer, header, aside, noscript, .advertisement, .ads, svg, form").Remove()
 
 	var textBuilder strings.Builder
 	doc.Find("p").Each(func(i int, sel *goquery.Selection) {
@@ -238,10 +340,17 @@ func (s *newsService) scrapeContent(url string) (string, error) {
 		}
 	})
 
-	result := strings.TrimSpace(textBuilder.String())
-	if result == "" {
-		return "", fmt.Errorf("no content found in page")
+	content := strings.TrimSpace(textBuilder.String())
+	if content == "" {
+		return nil, fmt.Errorf("no content found in page")
 	}
 
-	return result, nil
+	if len(content) < 80 {
+		return nil, fmt.Errorf("insufficient readable content found (possibly paywalled or anti-bot protected)")
+	}
+
+	return &ScrapedArticle{
+		Title:   title,
+		Content: content,
+	}, nil
 }
