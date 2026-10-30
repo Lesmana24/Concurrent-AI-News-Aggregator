@@ -182,6 +182,55 @@ paths:
       summary: Ask questions about provided news articles
       tags:
       - News
+  /api/v1/qa/stream:
+    post:
+      consumes:
+      - application/json
+      description: Streams answer tokens incrementally in real-time (Server-Sent Events)
+        based on extracted news content.
+      parameters:
+      - description: Question and list of news URLs (max 5)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.NewsQARequest'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: Server-Sent Events stream
+          schema:
+            type: string
+        "400":
+          description: Invalid request body or validation error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: API Key missing or invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Quota exceeded
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal processing error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Ask questions about news articles with real-time SSE streaming
+      tags:
+      - News
   /api/v1/summarize:
     post:
       consumes:

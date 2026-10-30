@@ -47,3 +47,7 @@ func (p *GroqProvider) Summarize(ctx context.Context, text string) (string, erro
 func (p *GroqProvider) AnswerQuestion(ctx context.Context, contextArticles, question string) (string, error) {
 	return p.client.AnswerQuestion(ctx, contextArticles, question)
 }
+
+func (p *GroqProvider) AnswerQuestionStream(ctx context.Context, contextArticles, question string, outChan chan<- string) error {
+	return p.client.AnswerQuestionStream(ctx, contextArticles, question, outChan)
+}

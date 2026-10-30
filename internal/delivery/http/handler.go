@@ -2,6 +2,7 @@ package http
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"news-aggregator/internal/cache"
 	"news-aggregator/internal/models"
@@ -144,4 +145,60 @@ func (h *NewsHandler) QA(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, res)
+}
+
+// QAStream godoc
+// @Summary      Ask questions about news articles with real-time SSE streaming
+// @Description  Streams answer tokens incrementally in real-time (Server-Sent Events) based on extracted news content.
+// @Tags         News
+// @Accept       json
+// @Produce      text/event-stream
+// @Security     ApiKeyAuth
+// @Param        request body models.NewsQARequest true "Question and list of news URLs (max 5)"
+// @Success      200 {string} string "Server-Sent Events stream"
+// @Failure      400 {object} map[string]string "Invalid request body or validation error"
+// @Failure      401 {object} map[string]string "API Key missing or invalid"
+// @Failure      403 {object} map[string]string "Quota exceeded"
+// @Failure      500 {object} map[string]string "Internal processing error"
+// @Router       /api/v1/qa/stream [post]
+func (h *NewsHandler) QAStream(c *gin.Context) {
+	var req models.NewsQARequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid request body: %v", err)})
+		return
+	}
+
+	apiKey := c.GetHeader("X-API-KEY")
+	tokenChan := make(chan string, 20)
+	errChan := make(chan error, 1)
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("Transfer-Encoding", "chunked")
+
+	go func() {
+		defer close(tokenChan)
+		_, _, err := h.service.AnswerQuestionStream(c.Request.Context(), apiKey, req, tokenChan)
+		if err != nil {
+			errChan <- err
+		}
+	}()
+
+	c.Stream(func(w io.Writer) bool {
+		select {
+		case err := <-errChan:
+			c.SSEvent("error", gin.H{"error": err.Error()})
+			return false
+		case token, ok := <-tokenChan:
+			if !ok {
+				c.SSEvent("done", gin.H{"status": "completed"})
+				return false
+			}
+			c.SSEvent("token", token)
+			return true
+		case <-c.Request.Context().Done():
+			return false
+		}
+	})
 }

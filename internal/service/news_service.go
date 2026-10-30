@@ -31,6 +31,7 @@ type Repository interface {
 type NewsService interface {
 	SummarizeArticles(ctx context.Context, apiKey string, urls []string) ([]models.ArticleResponse, error)
 	AnswerQuestion(ctx context.Context, apiKey string, req models.NewsQARequest) (*models.NewsQAResponse, error)
+	AnswerQuestionStream(ctx context.Context, apiKey string, req models.NewsQARequest, outChan chan<- string) (provider string, sources []string, err error)
 	GetUser(apiKey string) (*models.User, error)
 	WithCache(c cache.CacheService) NewsService
 }
@@ -168,12 +169,9 @@ func (s *newsService) AnswerQuestion(ctx context.Context, apiKey string, req mod
 			return nil, fmt.Errorf("failed to retrieve content from [%s]: %w", u, err)
 		}
 
-		// Cap content length to max 4000 characters to prevent token overflow
-		if len(content) > 4000 {
-			content = content[:4000] + "..."
-		}
-
-		contextBuilder.WriteString(fmt.Sprintf("\n--- ARTIKEL [%d]: %s (URL: %s) ---\n%s\n", idx+1, title, u, content))
+		// Smart Chunking: Select the most relevant paragraph chunks matching the question
+		relevantContent := SmartSelectChunks(content, req.Question, 3500)
+		contextBuilder.WriteString(fmt.Sprintf("\n--- ARTIKEL [%d]: %s (URL: %s) ---\n%s\n", idx+1, title, u, relevantContent))
 	}
 
 	answer, provider, err := s.aiService.AnswerQuestion(ctx, contextBuilder.String(), req.Question)
@@ -188,6 +186,52 @@ func (s *newsService) AnswerQuestion(ctx context.Context, apiKey string, req mod
 		Sources:  validURLs,
 		Source:   provider,
 	}, nil
+}
+
+func (s *newsService) AnswerQuestionStream(ctx context.Context, apiKey string, req models.NewsQARequest, outChan chan<- string) (string, []string, error) {
+	user, err := s.GetUser(apiKey)
+	if err != nil {
+		return "", nil, fmt.Errorf("authentication failed: %w", err)
+	}
+
+	validURLs, err := FilterURLs(req.URLs, 5)
+	if err != nil {
+		return "", nil, fmt.Errorf("URL validation failed: %w", err)
+	}
+
+	deducted, err := s.repo.DeductUserQuota(user.ID, 1)
+	if err != nil {
+		return "", nil, fmt.Errorf("database error: %w", err)
+	}
+	if !deducted {
+		return "", nil, fmt.Errorf("quota exceeded")
+	}
+
+	refundOnFailure := func() {
+		if err := s.repo.RefundUserQuota(user.ID, 1); err != nil {
+			log.Printf("Warning: failed to refund quota to user %d: %v", user.ID, err)
+		}
+	}
+
+	var contextBuilder strings.Builder
+	for idx, u := range validURLs {
+		title, content, err := s.getOrFetchArticleContent(ctx, u)
+		if err != nil {
+			refundOnFailure()
+			return "", nil, fmt.Errorf("failed to retrieve content from [%s]: %w", u, err)
+		}
+
+		relevantContent := SmartSelectChunks(content, req.Question, 3500)
+		contextBuilder.WriteString(fmt.Sprintf("\n--- ARTIKEL [%d]: %s (URL: %s) ---\n%s\n", idx+1, title, u, relevantContent))
+	}
+
+	provider, err := s.aiService.AnswerQuestionStream(ctx, contextBuilder.String(), req.Question, outChan)
+	if err != nil {
+		refundOnFailure()
+		return "", nil, fmt.Errorf("AI streaming Q&A failed: %w", err)
+	}
+
+	return provider, validURLs, nil
 }
 
 func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*models.ArticleResponse, error) {

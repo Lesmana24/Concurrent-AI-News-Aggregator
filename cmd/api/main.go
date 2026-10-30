@@ -113,6 +113,8 @@ func main() {
 			protected.POST("/summarize", handler.Summarize)
 			protected.POST("/qa", handler.QA)
 			protected.POST("/news/qa", handler.QA)
+			protected.POST("/qa/stream", handler.QAStream)
+			protected.POST("/news/qa/stream", handler.QAStream)
 		}
 	}
 

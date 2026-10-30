@@ -68,3 +68,29 @@ func (c *FallbackChain) AnswerQuestion(ctx context.Context, contextArticles, que
 
 	return "", "", fmt.Errorf("all AI providers failed: %s", strings.Join(errors, "; "))
 }
+
+// AnswerQuestionStream iterates through configured providers in priority order and streams response tokens.
+func (c *FallbackChain) AnswerQuestionStream(ctx context.Context, contextArticles, question string, outChan chan<- string) (string, error) {
+	if len(c.providers) == 0 {
+		return "", fmt.Errorf("no AI providers configured in fallback chain")
+	}
+
+	var errors []string
+
+	for _, p := range c.providers {
+		if !p.IsConfigured() {
+			continue
+		}
+
+		err := p.AnswerQuestionStream(ctx, contextArticles, question, outChan)
+		if err == nil {
+			return p.Name(), nil
+		}
+
+		errMsg := fmt.Sprintf("[%s]: %v", p.Name(), err)
+		errors = append(errors, errMsg)
+		log.Printf("[AI Fallback Chain Stream] Provider %s failed (%v). Attempting next provider...", p.Name(), err)
+	}
+
+	return "", fmt.Errorf("all AI streaming providers failed: %s", strings.Join(errors, "; "))
+}

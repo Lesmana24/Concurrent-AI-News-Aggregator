@@ -12,10 +12,16 @@ type QAEngine interface {
 	AnswerQuestion(ctx context.Context, contextArticles, question string) (answer string, provider string, err error)
 }
 
-// AIService aggregates both summarization and Q&A capabilities.
+// StreamingQAEngine provides real-time token streaming for Q&A responses.
+type StreamingQAEngine interface {
+	AnswerQuestionStream(ctx context.Context, contextArticles, question string, outChan chan<- string) (provider string, err error)
+}
+
+// AIService aggregates summarization, standard Q&A, and real-time streaming capabilities.
 type AIService interface {
 	Summarizer
 	QAEngine
+	StreamingQAEngine
 }
 
 // Provider represents an individual AI service provider (e.g. Groq, NVIDIA NIM, Google AI, Local-Fallback).
@@ -24,4 +30,5 @@ type Provider interface {
 	IsConfigured() bool
 	Summarize(ctx context.Context, text string) (string, error)
 	AnswerQuestion(ctx context.Context, contextArticles, question string) (string, error)
+	AnswerQuestionStream(ctx context.Context, contextArticles, question string, outChan chan<- string) error
 }

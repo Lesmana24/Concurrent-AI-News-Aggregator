@@ -454,6 +454,45 @@ curl -X POST http://localhost:8080/api/v1/qa \
 
 ---
 
+### 4. Tanya Jawab Berita Real-Time Streaming (SSE)
+Mengembalikan token jawaban secara bertahap (*typing effect*) secara realtime via Server-Sent Events (SSE). Dilengkapi mesin **Smart Chunking & Semantic Relevance Scoring** yang secara otomatis menyeleksi paragraf artikel paling relevan dengan pertanyaan pengguna untuk menangani artikel berita yang sangat panjang.
+
+- **Method**: `POST`
+- **URL**: `/api/v1/qa/stream` *(atau alias: `/api/v1/news/qa/stream`)*
+- **Header**:
+  - `Content-Type: application/json`
+  - `X-API-KEY: test-key-123`
+
+**Contoh Request (cURL):**
+```bash
+curl -N -X POST http://localhost:8080/api/v1/qa/stream \
+  -H "Content-Type: application/json" \
+  -H "X-API-KEY: test-key-123" \
+  -d '{
+    "urls": [
+      "https://www.kompas.tv/regional/698663/ada-61-titik-demo-29-oktober-di-jakarta-hari-ini-polisi-siapkan-pengamanan"
+    ],
+    "question": "Ada berapa titik demo di Jakarta hari ini?"
+  }'
+```
+
+**Contoh Aliran Stream Output:**
+```text
+event:token
+data:Menurut
+
+event:token
+data: artikel
+
+event:token
+data: terdapat 61 titik aksi demo...
+
+event:done
+data:{"status":"completed"}
+```
+
+---
+
 ### Ringkasan Status Kode HTTP
 
 | Status Code | Kondisi | Contoh Respon |

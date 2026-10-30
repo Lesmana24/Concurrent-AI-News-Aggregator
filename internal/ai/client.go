@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -82,6 +83,7 @@ type chatRequest struct {
 	Messages    []chatMessage `json:"messages"`
 	Temperature float64       `json:"temperature"`
 	MaxTokens   int           `json:"max_tokens"`
+	Stream      bool          `json:"stream,omitempty"`
 }
 
 type chatMessage struct {
@@ -102,6 +104,18 @@ type chatResponse struct {
 	} `json:"error"`
 }
 
+type streamChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
+		FinishReason *string `json:"finish_reason"`
+	} `json:"choices"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
 func (c *OpenAICompatibleClient) Summarize(ctx context.Context, text string) (string, error) {
 	userMessage := fmt.Sprintf("Rangkum artikel berikut:\n\n%s", text)
 	return c.executeChat(ctx, systemPrompt, userMessage, defaultMaxTokens)
@@ -110,6 +124,11 @@ func (c *OpenAICompatibleClient) Summarize(ctx context.Context, text string) (st
 func (c *OpenAICompatibleClient) AnswerQuestion(ctx context.Context, contextArticles, question string) (string, error) {
 	userMessage := fmt.Sprintf("Konteks Artikel Berita:\n%s\n\nPertanyaan Pengguna:\n%s", contextArticles, question)
 	return c.executeChat(ctx, qaSystemPrompt, userMessage, defaultQAMaxTokens)
+}
+
+func (c *OpenAICompatibleClient) AnswerQuestionStream(ctx context.Context, contextArticles, question string, outChan chan<- string) error {
+	userMessage := fmt.Sprintf("Konteks Artikel Berita:\n%s\n\nPertanyaan Pengguna:\n%s", contextArticles, question)
+	return c.executeChatStream(ctx, qaSystemPrompt, userMessage, defaultQAMaxTokens, outChan)
 }
 
 func (c *OpenAICompatibleClient) executeChat(ctx context.Context, sysPrompt, userMsg string, maxTokens int) (string, error) {
@@ -171,4 +190,90 @@ func (c *OpenAICompatibleClient) executeChat(ctx context.Context, sysPrompt, use
 	}
 
 	return strings.TrimSpace(parsedResp.Choices[0].Message.Content), nil
+}
+
+func (c *OpenAICompatibleClient) executeChatStream(ctx context.Context, sysPrompt, userMsg string, maxTokens int, outChan chan<- string) error {
+	if !c.IsConfigured() {
+		return fmt.Errorf("%s is not configured (missing API key or URL)", c.providerName)
+	}
+
+	activeModel := c.resolver.ResolveModel(ctx, c.modelsURL, c.apiKey, c.providerType, c.model)
+
+	reqPayload := chatRequest{
+		Model: activeModel,
+		Messages: []chatMessage{
+			{Role: "system", Content: sysPrompt},
+			{Role: "user", Content: userMsg},
+		},
+		Temperature: defaultTemperature,
+		MaxTokens:   maxTokens,
+		Stream:      true,
+	}
+
+	reqBody, err := json.Marshal(reqPayload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.chatURL, bytes.NewBuffer(reqBody))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("%s stream request failed: %w", c.providerName, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%s stream API responded with status %d: %s", c.providerName, resp.StatusCode, string(respBytes))
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("error reading %s stream: %w", c.providerName, err)
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, ":") {
+			continue // SSE comment or keep-alive ping
+		}
+
+		if strings.HasPrefix(line, "data: ") {
+			payload := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
+			if payload == "[DONE]" {
+				break
+			}
+
+			var chunk streamChunk
+			if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+				continue
+			}
+
+			if chunk.Error != nil && chunk.Error.Message != "" {
+				return fmt.Errorf("%s stream error: %s", c.providerName, chunk.Error.Message)
+			}
+
+			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case outChan <- chunk.Choices[0].Delta.Content:
+				}
+			}
+		}
+	}
+
+	return nil
 }

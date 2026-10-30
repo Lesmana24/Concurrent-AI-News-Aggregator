@@ -69,6 +69,14 @@ func (m *MockAIService) AnswerQuestion(ctx context.Context, contextArticles, que
 	return args.String(0), args.String(1), args.Error(2)
 }
 
+func (m *MockAIService) AnswerQuestionStream(ctx context.Context, contextArticles, question string, outChan chan<- string) (string, error) {
+	args := m.Called(ctx, contextArticles, question, outChan)
+	if outChan != nil && args.Error(1) == nil {
+		outChan <- "Streamed answer token."
+	}
+	return args.String(0), args.Error(1)
+}
+
 func TestSummarizeArticles_QuotaExceeded(t *testing.T) {
 	mockRepo := new(MockRepository)
 	svc := NewNewsService(mockRepo)
@@ -248,4 +256,41 @@ func TestAnswerQuestion_QuotaExceeded(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, res)
 	assert.Contains(t, err.Error(), "quota exceeded")
+}
+
+func TestAnswerQuestionStream_Success(t *testing.T) {
+	mockRepo := new(MockRepository)
+	mockAI := new(MockAIService)
+	svc := NewNewsService(mockRepo, mockAI)
+
+	user := &models.User{Quota: 5}
+	user.ID = 1
+	mockRepo.On("GetUserByKey", "valid-key").Return(user, nil)
+	mockRepo.On("DeductUserQuota", uint(1), 1).Return(true, nil)
+
+	cachedArticle := models.Article{
+		Title:   "Demo Jakarta Hari Ini",
+		URL:     "https://example.com/demo-jakarta",
+		Content: "Polda Metro Jaya menyiapkan ribuan personel untuk mengamankan 61 titik demo di Jakarta hari ini.",
+	}
+	mockRepo.On("GetCachedArticles", "https://example.com/demo-jakarta").Return([]models.Article{cachedArticle}, nil)
+	mockAI.On("AnswerQuestionStream", mock.Anything, mock.Anything, "Berapa titik demo?", mock.Anything).Return("Groq", nil)
+
+	req := models.NewsQARequest{
+		URLs:     []string{"https://example.com/demo-jakarta"},
+		Question: "Berapa titik demo?",
+	}
+
+	tokenChan := make(chan string, 10)
+	provider, sources, err := svc.AnswerQuestionStream(context.Background(), "valid-key", req, tokenChan)
+	assert.NoError(t, err)
+	assert.Equal(t, "Groq", provider)
+	assert.Len(t, sources, 1)
+
+	var received string
+	close(tokenChan)
+	for tkn := range tokenChan {
+		received += tkn
+	}
+	assert.Equal(t, "Streamed answer token.", received)
 }

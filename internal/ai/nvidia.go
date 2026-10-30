@@ -47,3 +47,7 @@ func (p *NvidiaProvider) Summarize(ctx context.Context, text string) (string, er
 func (p *NvidiaProvider) AnswerQuestion(ctx context.Context, contextArticles, question string) (string, error) {
 	return p.client.AnswerQuestion(ctx, contextArticles, question)
 }
+
+func (p *NvidiaProvider) AnswerQuestionStream(ctx context.Context, contextArticles, question string, outChan chan<- string) error {
+	return p.client.AnswerQuestionStream(ctx, contextArticles, question, outChan)
+}

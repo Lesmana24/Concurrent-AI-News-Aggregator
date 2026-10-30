@@ -35,6 +35,15 @@ func (m *mockProvider) AnswerQuestion(ctx context.Context, contextArticles, ques
 	return m.answer, m.err
 }
 
+func (m *mockProvider) AnswerQuestionStream(ctx context.Context, contextArticles, question string, outChan chan<- string) error {
+	m.called = true
+	if m.err != nil {
+		return m.err
+	}
+	outChan <- m.answer
+	return nil
+}
+
 func TestFallbackChain_FirstProviderSuccess(t *testing.T) {
 	p1 := &mockProvider{name: "Groq", configured: true, summary: "Groq Summary", err: nil}
 	p2 := &mockProvider{name: "NVIDIA NIM", configured: true, summary: "NVIDIA Summary", err: nil}
@@ -124,4 +133,28 @@ func TestFallbackChain_QA_AllFail_LocalFallbackNotice(t *testing.T) {
 	assert.Equal(t, "Local-Fallback", provider)
 	assert.Contains(t, answer, "[Pemberitahuan Sistem]")
 	assert.Contains(t, answer, "tanya jawab AI sedang tidak dapat memproses jawaban")
+}
+
+func TestFallbackChain_QAStream_SuccessAndFailover(t *testing.T) {
+	p1 := &mockProvider{name: "Groq", configured: true, err: errors.New("429 rate limit")}
+	p2 := &mockProvider{name: "NVIDIA NIM", configured: true, answer: "Streaming token respon.", err: nil}
+
+	chain := NewFallbackChain(p1, p2)
+	outChan := make(chan string, 10)
+
+	go func() {
+		defer close(outChan)
+		provider, err := chain.AnswerQuestionStream(context.Background(), "konteks...", "pertanyaan?", outChan)
+		assert.NoError(t, err)
+		assert.Equal(t, "NVIDIA NIM", provider)
+	}()
+
+	var received string
+	for token := range outChan {
+		received += token
+	}
+
+	assert.Equal(t, "Streaming token respon.", received)
+	assert.True(t, p1.called)
+	assert.True(t, p2.called)
 }
