@@ -7,6 +7,7 @@ import (
 	"news-aggregator/internal/cache"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/service"
+	"strconv"
 	"strings"
 	"time"
 
@@ -201,4 +202,77 @@ func (h *NewsHandler) QAStream(c *gin.Context) {
 			return false
 		}
 	})
+}
+
+// SemanticSearch godoc
+// @Summary      Semantic vector search across archived news articles
+// @Description  Searches stored news articles based on dense embedding cosine similarity (pgvector HNSW index).
+// @Tags         News
+// @Produce      json
+// @Param        q query string true "Search query string"
+// @Param        limit query int false "Maximum number of results to return (default 5, max 20)"
+// @Success      200 {array} models.SemanticSearchResult "Matching articles ordered by relevance"
+// @Failure      400 {object} map[string]string "Invalid query parameter"
+// @Failure      500 {object} map[string]string "Internal search error"
+// @Router       /api/v1/news/search [get]
+func (h *NewsHandler) SemanticSearch(c *gin.Context) {
+	query := strings.TrimSpace(c.Query("q"))
+	if query == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Query parameter 'q' is required"})
+		return
+	}
+
+	limit := 5
+	if l := c.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	results, err := h.service.SemanticSearch(c.Request.Context(), query, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if results == nil {
+		results = []models.SemanticSearchResult{}
+	}
+
+	c.JSON(http.StatusOK, results)
+}
+
+// GlobalQA godoc
+// @Summary      Ask questions across all archived news articles (Global RAG)
+// @Description  Performs Retrieval-Augmented Generation (RAG) across all previously scraped news in PostgreSQL vector database.
+// @Tags         News
+// @Accept       json
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Param        request body models.GlobalQARequest true "User question"
+// @Success      200 {object} models.GlobalQAResponse "Answer generated from relevant archived articles"
+// @Failure      400 {object} map[string]string "Invalid request body or validation error"
+// @Failure      401 {object} map[string]string "API Key missing or invalid"
+// @Failure      403 {object} map[string]string "Quota exceeded"
+// @Failure      500 {object} map[string]string "Internal processing error"
+// @Router       /api/v1/qa/global [post]
+func (h *NewsHandler) GlobalQA(c *gin.Context) {
+	var req models.GlobalQARequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid request body: %v", err)})
+		return
+	}
+
+	apiKey := c.GetHeader("X-API-KEY")
+	res, err := h.service.GlobalQA(c.Request.Context(), apiKey, req)
+	if err != nil {
+		if strings.Contains(err.Error(), "quota exceeded") {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
 }

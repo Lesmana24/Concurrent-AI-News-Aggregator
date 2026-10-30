@@ -11,6 +11,28 @@ definitions:
       url:
         type: string
     type: object
+  models.GlobalQARequest:
+    properties:
+      question:
+        maxLength: 500
+        minLength: 3
+        type: string
+    required:
+    - question
+    type: object
+  models.GlobalQAResponse:
+    properties:
+      answer:
+        type: string
+      provider:
+        type: string
+      question:
+        type: string
+      sources:
+        items:
+          $ref: '#/definitions/models.SemanticSearchResult'
+        type: array
+    type: object
   models.NewsQARequest:
     properties:
       question:
@@ -39,6 +61,21 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  models.SemanticSearchResult:
+    properties:
+      article_id:
+        type: integer
+      similarity:
+        type: number
+      source:
+        type: string
+      summary:
+        type: string
+      title:
+        type: string
+      url:
+        type: string
     type: object
   models.SummarizeRequest:
     properties:
@@ -133,6 +170,44 @@ paths:
       summary: Ask questions about provided news articles
       tags:
       - News
+  /api/v1/news/search:
+    get:
+      description: Searches stored news articles based on dense embedding cosine similarity
+        (pgvector HNSW index).
+      parameters:
+      - description: Search query string
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: Maximum number of results to return (default 5, max 20)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Matching articles ordered by relevance
+          schema:
+            items:
+              $ref: '#/definitions/models.SemanticSearchResult'
+            type: array
+        "400":
+          description: Invalid query parameter
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal search error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Semantic vector search across archived news articles
+      tags:
+      - News
   /api/v1/qa:
     post:
       consumes:
@@ -180,6 +255,55 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Ask questions about provided news articles
+      tags:
+      - News
+  /api/v1/qa/global:
+    post:
+      consumes:
+      - application/json
+      description: Performs Retrieval-Augmented Generation (RAG) across all previously
+        scraped news in PostgreSQL vector database.
+      parameters:
+      - description: User question
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.GlobalQARequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Answer generated from relevant archived articles
+          schema:
+            $ref: '#/definitions/models.GlobalQAResponse'
+        "400":
+          description: Invalid request body or validation error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: API Key missing or invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Quota exceeded
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal processing error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Ask questions across all archived news articles (Global RAG)
       tags:
       - News
   /api/v1/qa/stream:

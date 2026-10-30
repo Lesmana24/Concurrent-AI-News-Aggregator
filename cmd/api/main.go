@@ -105,6 +105,7 @@ func main() {
 	api := r.Group("/api/v1")
 	{
 		api.GET("/health", handler.Health)
+		api.GET("/news/search", handler.SemanticSearch)
 
 		// Protected routes
 		protected := api.Group("/")
@@ -115,6 +116,8 @@ func main() {
 			protected.POST("/news/qa", handler.QA)
 			protected.POST("/qa/stream", handler.QAStream)
 			protected.POST("/news/qa/stream", handler.QAStream)
+			protected.POST("/qa/global", handler.GlobalQA)
+			protected.POST("/news/qa/global", handler.GlobalQA)
 		}
 	}
 

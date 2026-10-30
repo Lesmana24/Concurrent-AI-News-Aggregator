@@ -18,3 +18,26 @@ type NewsQAResponse struct {
 	Sources  []string `json:"sources"`
 	Source   string   `json:"source"`
 }
+
+// SemanticSearchResult represents an article matched by vector similarity
+type SemanticSearchResult struct {
+	ArticleID  uint    `json:"article_id"`
+	Title      string  `json:"title"`
+	URL        string  `json:"url"`
+	Summary    string  `json:"summary"`
+	Source     string  `json:"source"`
+	Similarity float64 `json:"similarity"`
+}
+
+// GlobalQARequest defines the payload for asking questions across all archived news
+type GlobalQARequest struct {
+	Question string `json:"question" binding:"required,min=3,max=500"`
+}
+
+// GlobalQAResponse defines the answer and cited sources for global news Q&A
+type GlobalQAResponse struct {
+	Question string                 `json:"question"`
+	Answer   string                 `json:"answer"`
+	Sources  []SemanticSearchResult `json:"sources"`
+	Provider string                 `json:"provider"`
+}

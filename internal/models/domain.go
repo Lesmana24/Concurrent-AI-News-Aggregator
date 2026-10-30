@@ -2,14 +2,16 @@ package models
 
 import (
 	"time"
+
+	"github.com/pgvector/pgvector-go"
 	"gorm.io/gorm"
 )
 
 type User struct {
 	gorm.Model
-	APIKey   string `gorm:"uniqueIndex;not null" json:"api_key"`
-	Quota    int    `gorm:"default:100" json:"quota"`
-	Email    string `gorm:"uniqueIndex;not null" json:"email"`
+	APIKey string `gorm:"uniqueIndex;not null" json:"api_key"`
+	Quota  int    `gorm:"default:100" json:"quota"`
+	Email  string `gorm:"uniqueIndex;not null" json:"email"`
 }
 
 type Article struct {
@@ -21,6 +23,12 @@ type Article struct {
 	AIProvider  string    `json:"ai_provider"`
 	PublishedAt time.Time `json:"published_at"`
 	Summary     string    `gorm:"type:text" json:"summary"`
+}
+
+type ArticleEmbedding struct {
+	ArticleID uint            `gorm:"primaryKey" json:"article_id"`
+	Embedding pgvector.Vector `gorm:"type:vector(768)" json:"-"`
+	CreatedAt time.Time       `json:"created_at"`
 }
 
 // Request/Response Structs

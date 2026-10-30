@@ -55,6 +55,47 @@ func (m *MockRepository) GetCachedArticles(url string) ([]models.Article, error)
 	return args.Get(0).([]models.Article), args.Error(1)
 }
 
+func (m *MockRepository) GetArticleByURL(url string) (*models.Article, error) {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == "GetArticleByURL" {
+			args := m.Called(url)
+			if args.Get(0) == nil {
+				return nil, args.Error(1)
+			}
+			return args.Get(0).(*models.Article), args.Error(1)
+		}
+	}
+	return nil, nil
+}
+
+func (m *MockRepository) SaveArticleEmbedding(articleID uint, embedding []float32) error {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == "SaveArticleEmbedding" {
+			args := m.Called(articleID, embedding)
+			return args.Error(0)
+		}
+	}
+	return nil
+}
+
+func (m *MockRepository) SearchSimilarArticles(ctx context.Context, queryVector []float32, limit int, minSimilarity float64) ([]models.SemanticSearchResult, error) {
+	args := m.Called(ctx, queryVector, limit, minSimilarity)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]models.SemanticSearchResult), args.Error(1)
+}
+
+func (m *MockRepository) HasVectorSupport() bool {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == "HasVectorSupport" {
+			args := m.Called()
+			return args.Bool(0)
+		}
+	}
+	return false
+}
+
 type MockAIService struct {
 	mock.Mock
 }
@@ -293,4 +334,77 @@ func TestAnswerQuestionStream_Success(t *testing.T) {
 		received += tkn
 	}
 	assert.Equal(t, "Streamed answer token.", received)
+}
+
+func TestSemanticSearch_Success(t *testing.T) {
+	mockRepo := new(MockRepository)
+	mockAI := new(MockAIService)
+	svc := NewNewsService(mockRepo, mockAI)
+
+	expectedResults := []models.SemanticSearchResult{
+		{
+			ArticleID:  10,
+			Title:      "Demo 61 Titik Jakarta",
+			URL:        "https://example.com/demo",
+			Summary:    "Polisi siapkan ribuan personel.",
+			Source:     "Kompas",
+			Similarity: 0.88,
+		},
+	}
+
+	mockRepo.On("SearchSimilarArticles", mock.Anything, mock.Anything, 5, 0.20).Return(expectedResults, nil)
+
+	results, err := svc.SemanticSearch(context.Background(), "pengamanan demo", 5)
+	assert.NoError(t, err)
+	assert.Len(t, results, 1)
+	assert.Equal(t, "Demo 61 Titik Jakarta", results[0].Title)
+	assert.Equal(t, 0.88, results[0].Similarity)
+}
+
+func TestGlobalQA_Success(t *testing.T) {
+	mockRepo := new(MockRepository)
+	mockAI := new(MockAIService)
+	svc := NewNewsService(mockRepo, mockAI)
+
+	user := &models.User{Quota: 10}
+	user.ID = 1
+	mockRepo.On("GetUserByKey", "valid-key").Return(user, nil)
+	mockRepo.On("DeductUserQuota", uint(1), 1).Return(true, nil)
+
+	matchingArticles := []models.SemanticSearchResult{
+		{
+			ArticleID:  1,
+			Title:      "Demo 61 Titik Jakarta",
+			URL:        "https://example.com/demo",
+			Summary:    "Polisi siapkan ribuan personel di 61 titik demo.",
+			Source:     "Detik",
+			Similarity: 0.85,
+		},
+	}
+	mockRepo.On("SearchSimilarArticles", mock.Anything, mock.Anything, 3, 0.20).Return(matchingArticles, nil)
+	mockAI.On("AnswerQuestion", mock.Anything, mock.Anything, "Berapa titik demo?").Return("Terdapat 61 titik demo di Jakarta.", "Groq", nil)
+
+	res, err := svc.GlobalQA(context.Background(), "valid-key", models.GlobalQARequest{Question: "Berapa titik demo?"})
+	assert.NoError(t, err)
+	assert.Equal(t, "Terdapat 61 titik demo di Jakarta.", res.Answer)
+	assert.Equal(t, "Groq", res.Provider)
+	assert.Len(t, res.Sources, 1)
+}
+
+func TestGlobalQA_NoRelevantArticlesGracefulNotice(t *testing.T) {
+	mockRepo := new(MockRepository)
+	mockAI := new(MockAIService)
+	svc := NewNewsService(mockRepo, mockAI)
+
+	user := &models.User{Quota: 10}
+	user.ID = 1
+	mockRepo.On("GetUserByKey", "valid-key").Return(user, nil)
+	mockRepo.On("DeductUserQuota", uint(1), 1).Return(true, nil)
+
+	mockRepo.On("SearchSimilarArticles", mock.Anything, mock.Anything, 3, 0.20).Return([]models.SemanticSearchResult{}, nil)
+
+	res, err := svc.GlobalQA(context.Background(), "valid-key", models.GlobalQARequest{Question: "Bagaimana resep nasi goreng?"})
+	assert.NoError(t, err)
+	assert.Contains(t, res.Answer, "tidak ditemukan arsip berita yang relevan")
+	assert.Empty(t, res.Sources)
 }

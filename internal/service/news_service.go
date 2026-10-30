@@ -26,21 +26,29 @@ type Repository interface {
 	RefundUserQuota(userID uint, amount int) error
 	BatchInsertArticles(articles []models.Article) error
 	GetCachedArticles(url string) ([]models.Article, error)
+	GetArticleByURL(url string) (*models.Article, error)
+	SaveArticleEmbedding(articleID uint, embedding []float32) error
+	SearchSimilarArticles(ctx context.Context, queryVector []float32, limit int, minSimilarity float64) ([]models.SemanticSearchResult, error)
+	HasVectorSupport() bool
 }
 
 type NewsService interface {
 	SummarizeArticles(ctx context.Context, apiKey string, urls []string) ([]models.ArticleResponse, error)
 	AnswerQuestion(ctx context.Context, apiKey string, req models.NewsQARequest) (*models.NewsQAResponse, error)
 	AnswerQuestionStream(ctx context.Context, apiKey string, req models.NewsQARequest, outChan chan<- string) (provider string, sources []string, err error)
+	SemanticSearch(ctx context.Context, query string, limit int) ([]models.SemanticSearchResult, error)
+	GlobalQA(ctx context.Context, apiKey string, req models.GlobalQARequest) (*models.GlobalQAResponse, error)
 	GetUser(apiKey string) (*models.User, error)
 	WithCache(c cache.CacheService) NewsService
+	WithEmbedding(emb ai.EmbeddingService) NewsService
 }
 
 type newsService struct {
-	repo      Repository
-	aiService ai.AIService
-	cacheSvc  cache.CacheService
-	sfGroup   singleflight.Group
+	repo         Repository
+	aiService    ai.AIService
+	cacheSvc     cache.CacheService
+	embeddingSvc ai.EmbeddingService
+	sfGroup      singleflight.Group
 }
 
 type ScrapedArticle struct {
@@ -58,13 +66,19 @@ func NewNewsService(repo Repository, aiServices ...ai.AIService) NewsService {
 	}
 
 	return &newsService{
-		repo:      repo,
-		aiService: aiSvc,
+		repo:         repo,
+		aiService:    aiSvc,
+		embeddingSvc: ai.NewDefaultEmbeddingService(),
 	}
 }
 
 func (s *newsService) WithCache(c cache.CacheService) NewsService {
 	s.cacheSvc = c
+	return s
+}
+
+func (s *newsService) WithEmbedding(emb ai.EmbeddingService) NewsService {
+	s.embeddingSvc = emb
 	return s
 }
 
@@ -311,6 +325,17 @@ func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*mod
 		}
 		if err := s.repo.BatchInsertArticles([]models.Article{article}); err != nil {
 			log.Printf("Warning: failed to cache article %s: %v", url, err)
+		} else if s.embeddingSvc != nil && s.repo.HasVectorSupport() {
+			// Asynchronously generate and persist vector embedding for semantic search
+			go func(t, sum, u string) {
+				art, err := s.repo.GetArticleByURL(u)
+				if err == nil && art != nil && art.ID > 0 {
+					textToEmbed := fmt.Sprintf("%s\n\n%s", t, sum)
+					if vec, err := s.embeddingSvc.GenerateEmbedding(context.Background(), textToEmbed); err == nil && len(vec) > 0 {
+						_ = s.repo.SaveArticleEmbedding(art.ID, vec)
+					}
+				}
+			}(title, summary, url)
 		}
 
 		res := &models.ArticleResponse{
@@ -463,4 +488,89 @@ func (s *newsService) scrapeArticle(ctx context.Context, url string) (*ScrapedAr
 func hashURL(u string) string {
 	h := sha256.Sum256([]byte(u))
 	return hex.EncodeToString(h[:])
+}
+
+// SemanticSearch queries archived news using pgvector cosine similarity.
+func (s *newsService) SemanticSearch(ctx context.Context, query string, limit int) ([]models.SemanticSearchResult, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, fmt.Errorf("search query cannot be empty")
+	}
+	if limit <= 0 {
+		limit = 5
+	}
+	if limit > 20 {
+		limit = 20
+	}
+
+	if s.embeddingSvc == nil {
+		return nil, fmt.Errorf("embedding service is not configured")
+	}
+
+	vec, err := s.embeddingSvc.GenerateEmbedding(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate query embedding: %w", err)
+	}
+
+	results, err := s.repo.SearchSimilarArticles(ctx, vec, limit, 0.20)
+	if err != nil {
+		return nil, fmt.Errorf("vector similarity search failed: %w", err)
+	}
+
+	return results, nil
+}
+
+// GlobalQA performs RAG across all archived news articles in the vector database.
+func (s *newsService) GlobalQA(ctx context.Context, apiKey string, req models.GlobalQARequest) (*models.GlobalQAResponse, error) {
+	user, err := s.GetUser(apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("authentication failed: %w", err)
+	}
+
+	// Atomic Quota Deduction Upfront (1 quota per Global Q&A question)
+	deducted, err := s.repo.DeductUserQuota(user.ID, 1)
+	if err != nil {
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+	if !deducted {
+		return nil, fmt.Errorf("quota exceeded")
+	}
+
+	refundOnFailure := func() {
+		if err := s.repo.RefundUserQuota(user.ID, 1); err != nil {
+			log.Printf("Warning: failed to refund quota to user %d: %v", user.ID, err)
+		}
+	}
+
+	// 1. Vector Search for top-3 relevant articles in the archive
+	results, err := s.SemanticSearch(ctx, req.Question, 3)
+	if err != nil || len(results) == 0 {
+		return &models.GlobalQAResponse{
+			Question: req.Question,
+			Answer:   "Maaf, tidak ditemukan arsip berita yang relevan dengan pertanyaan Anda di dalam sistem saat ini.",
+			Sources:  []models.SemanticSearchResult{},
+			Provider: "local-archive",
+		}, nil
+	}
+
+	// 2. Build RAG Context
+	var contextBuilder strings.Builder
+	for idx, res := range results {
+		contextBuilder.WriteString(fmt.Sprintf("\n--- ARTIKEL [%d]: %s (Sumber: %s, URL: %s, Similarity: %.2f) ---\n%s\n",
+			idx+1, res.Title, res.Source, res.URL, res.Similarity, res.Summary))
+	}
+
+	// 3. Query AI Service with strict facts from retrieved context
+	answer, provider, err := s.aiService.AnswerQuestion(ctx, contextBuilder.String(), req.Question)
+	if err != nil {
+		refundOnFailure()
+		return nil, fmt.Errorf("global AI Q&A failed: %w", err)
+	}
+
+	return &models.GlobalQAResponse{
+		Question: req.Question,
+		Answer:   answer,
+		Sources:  results,
+		Provider: provider,
+	}, nil
 }

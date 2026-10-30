@@ -4,10 +4,11 @@
 [![Framework](https://img.shields.io/badge/Framework-Gin%20Gonic-008ECF?style=flat&logo=gin)](https://gin-gonic.com/)
 [![ORM](https://img.shields.io/badge/ORM-GORM-E94E32?style=flat&logo=go&logoColor=white)](https://gorm.io/)
 [![Database](https://img.shields.io/badge/Database-PostgreSQL-336791?style=flat&logo=postgresql)](https://www.postgresql.org/)
+[![Vector DB](https://img.shields.io/badge/Vector%20DB-pgvector-4169E1?style=flat&logo=postgresql&logoColor=white)](https://github.com/pgvector/pgvector)
 [![Cache](https://img.shields.io/badge/Cache-Redis%20L1-DC382D?style=flat&logo=redis&logoColor=white)](https://redis.io/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
 [![AI Providers](https://img.shields.io/badge/AI%20Providers-Groq%20%7C%20NVIDIA%20NIM%20%7C%20Gemini-7B32F5?style=flat)](https://groq.com)
-[![Status](https://img.shields.io/badge/Project%20Status-Production%20Ready%20(Phase%205%20Completed)-success)](#)
+[![Status](https://img.shields.io/badge/Project%20Status-Production%20Ready%20(Phase%206%20Completed)-success)](#)
 
 **Concurrent AI News Aggregator** adalah layanan REST API backend performa tinggi berbasis **Golang** yang dirancang untuk melakukan *web scraping*, ekstraksi teks berita cerdas, peringkasan artikel secara paralel (**Fan-Out/Fan-In Goroutines**), serta fitur **Tanya Jawab Berita (News Q&A)** dengan batasan topik (*strict topic guardrails*).
 
@@ -489,6 +490,72 @@ data: terdapat 61 titik aksi demo...
 
 event:done
 data:{"status":"completed"}
+```
+
+---
+
+### 5. Pencarian Berita Berbasis Makna Semantik (Semantic Search)
+Mencari artikel berita yang tersimpan di dalam database menggunakan **vektor embedding 768 dimensi (*dense embeddings*)** dan indeks HNSW `pgvector`. Pengguna dapat menemukan artikel yang relevan berdasarkan konteks makna, meskipun tidak menggunakan kata kunci pencarian yang sama persis.
+
+- **Method**: `GET`
+- **URL**: `/api/v1/news/search?q={query}&limit={limit}`
+- **Query Parameter**:
+  - `q` (string, wajib): Teks pencarian bebas (misal: `"demonstrasi buruh jakarta"`).
+  - `limit` (integer, opsional): Jumlah artikel yang dikembalikan (default: `5`, max: `20`).
+
+**Contoh Request (cURL):**
+```bash
+curl -X GET "http://localhost:8080/api/v1/news/search?q=keamanan+unjuk+rasa+ibu+kota&limit=3"
+```
+
+**Contoh Respon Berhasil (HTTP 200):**
+```json
+[
+  {
+    "article_id": 1,
+    "title": "Ada 61 Titik Demo 29 Oktober di Jakarta Hari Ini, Polisi Siapkan Pengamanan",
+    "url": "https://www.kompas.tv/regional/698663/ada-61-titik-demo-29-oktober-di-jakarta-hari-ini-polisi-siapkan-pengamanan",
+    "summary": "Polda Metro Jaya menyiagakan ribuan personel gabungan...",
+    "source": "Kompas",
+    "similarity": 0.8654
+  }
+]
+```
+
+---
+
+### 6. Tanya Jawab Global RAG Lintas Seluruh Berita (Global News Q&A)
+Memanfaatkan arsitektur **Retrieval-Augmented Generation (RAG)** untuk menjawab pertanyaan pengguna berdasarkan seluruh basis pengetahuan berita yang pernah di-scrape ke sistem tanpa perlu memasukkan URL secara manual.
+
+- **Method**: `POST`
+- **URL**: `/api/v1/qa/global` *(atau alias: `/api/v1/news/qa/global`)*
+- **Header**:
+  - `Content-Type: application/json`
+  - `X-API-KEY: test-key-123`
+- **Body JSON**:
+```json
+{
+  "question": "Apa saja persiapan pengamanan yang dilakukan pihak kepolisian di Jakarta?"
+}
+```
+
+**Contoh Respon Berhasil (HTTP 200):**
+```json
+{
+  "question": "Apa saja persiapan pengamanan yang dilakukan pihak kepolisian di Jakarta?",
+  "answer": "Berdasarkan arsip berita, Polda Metro Jaya telah menyiagakan ribuan personel gabungan di 61 titik aksi untuk menjaga ketertiban masyarakat serta menyiapkan rekayasa lalu lintas situasional.",
+  "sources": [
+    {
+      "article_id": 1,
+      "title": "Ada 61 Titik Demo 29 Oktober di Jakarta Hari Ini, Polisi Siapkan Pengamanan",
+      "url": "https://www.kompas.tv/regional/698663/ada-61-titik-demo-29-oktober-di-jakarta-hari-ini-polisi-siapkan-pengamanan",
+      "summary": "Polda Metro Jaya menyiagakan ribuan personel gabungan...",
+      "source": "Kompas",
+      "similarity": 0.8654
+    }
+  ],
+  "provider": "Groq"
+}
 ```
 
 ---
