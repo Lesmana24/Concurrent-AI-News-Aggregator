@@ -2,7 +2,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)](https://golang.org)
 [![Framework](https://img.shields.io/badge/Framework-Gin%20Gonic-008ECF?style=flat&logo=gin)](https://gin-gonic.com/)
-[![ORM](https://img.shields.io/badge/ORM-GORM-E94E32?style=flat)](https://gorm.io/)
+[![ORM](https://img.shields.io/badge/ORM-GORM-E94E32?style=flat&logo=go&logoColor=white)](https://gorm.io/)
 [![Database](https://img.shields.io/badge/Database-PostgreSQL-336791?style=flat&logo=postgresql)](https://www.postgresql.org/)
 [![AI Providers](https://img.shields.io/badge/AI%20Providers-Groq%20%7C%20NVIDIA%20NIM%20%7C%20Gemini-7B32F5?style=flat)](https://groq.com)
 [![Status](https://img.shields.io/badge/Project%20Status-Production%20Ready%20(Phase%205%20Completed)-success)](#)
