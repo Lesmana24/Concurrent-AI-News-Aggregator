@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"net/http"
+	"log/slog"
 	"os"
 
+	_ "news-aggregator/docs"
 	"news-aggregator/internal/ai"
 	deliveryHttp "news-aggregator/internal/delivery/http"
 	"news-aggregator/internal/middleware"
@@ -15,14 +15,40 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
+// @title           Concurrent AI News Aggregator API
+// @version         1.0
+// @description     High-performance Concurrent AI News Aggregator backend in Go with web scraping, parallel LLM summarization, and strict guardrail News Q&A.
+// @termsOfService  https://github.com/Lesmana24/Concurrent-AI-News-Aggregator
+
+// @contact.name    API Support
+// @contact.url     https://github.com/Lesmana24/Concurrent-AI-News-Aggregator
+
+// @license.name    MIT
+// @license.url     https://opensource.org/licenses/MIT
+
+// @host            localhost:8080
+// @BasePath        /
+
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-KEY
+// @description Personal API key for authentication and quota management
 func main() {
+	// Initialize Structured JSON Logger (slog)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
 	// Load .env
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using system environment variables")
+		slog.Info("No .env file found, using system environment variables")
 	}
 
 	// DB Connection
@@ -31,13 +57,15 @@ func main() {
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		log.Fatal("Failed to connect to database: ", err)
+		slog.Error("Failed to connect to database", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
 	// AutoMigrate
 	err = db.AutoMigrate(&models.User{}, &models.Article{})
 	if err != nil {
-		log.Fatal("Migration failed: ", err)
+		slog.Error("Database migration failed", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
 	// Initialize Repository
@@ -49,18 +77,21 @@ func main() {
 	// Initialize Service
 	svc := service.NewNewsService(repo, aiService)
 
-	// Initialize Handler
-	handler := deliveryHttp.NewNewsHandler(svc)
+	// Initialize Handler with DB reference for live health checks
+	handler := deliveryHttp.NewNewsHandler(svc, db)
 
-	// Gin Server
-	r := gin.Default()
+	// Gin Engine with Structured Logging & Request-ID Middleware
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.Use(middleware.RequestIDAndLogger())
+
+	// Swagger Interactive Documentation UI
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// Routes
 	api := r.Group("/api/v1")
 	{
-		api.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"status": "ok"})
-		})
+		api.GET("/health", handler.Health)
 
 		// Protected routes
 		protected := api.Group("/")
@@ -77,6 +108,8 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("Server starting on port %s...", port)
-	r.Run(":" + port)
+	slog.Info("Server starting...", slog.String("port", port), slog.String("swagger_docs", "http://localhost:"+port+"/swagger/index.html"))
+	if err := r.Run(":" + port); err != nil {
+		slog.Error("Server failed to run", slog.String("error", err.Error()))
+	}
 }

@@ -322,7 +322,13 @@ Server akan aktif pada: `http://localhost:8080`.
 
 ## 📡 Dokumentasi API Endpoint
 
-Semua endpoint dilindungi oleh header wajib `X-API-KEY`, kecuali endpoint `/health`.
+> 💡 **Interactive Swagger UI**: Dokumentasi OpenAPI interaktif lengkap dengan fitur uji coba langsung via browser tersedia di:  
+> 👉 **`http://localhost:8080/swagger/index.html`**  
+> *(Gunakan tombol **Authorize** di Swagger UI dan masukkan `test-key-123` untuk menguji endpoint terproteksi).*
+
+Semua response HTTP kini menyertakan header penelusuran terstruktur `X-Request-ID` dan dicatat ke konsol dalam format JSON terstruktur via standard library Go `log/slog`.
+
+Semua endpoint bisnis dilindungi oleh header wajib `X-API-KEY`, kecuali endpoint `/health`.
 
 ### 1. Health Check
 Mengecek status kesehatan server.
