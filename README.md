@@ -4,6 +4,7 @@
 [![Framework](https://img.shields.io/badge/Framework-Gin%20Gonic-008ECF?style=flat&logo=gin)](https://gin-gonic.com/)
 [![ORM](https://img.shields.io/badge/ORM-GORM-E94E32?style=flat&logo=go&logoColor=white)](https://gorm.io/)
 [![Database](https://img.shields.io/badge/Database-PostgreSQL-336791?style=flat&logo=postgresql)](https://www.postgresql.org/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
 [![AI Providers](https://img.shields.io/badge/AI%20Providers-Groq%20%7C%20NVIDIA%20NIM%20%7C%20Gemini-7B32F5?style=flat)](https://groq.com)
 [![Status](https://img.shields.io/badge/Project%20Status-Production%20Ready%20(Phase%205%20Completed)-success)](#)
 
@@ -127,6 +128,9 @@ Proyek ini dibangun menggunakan prinsip **Clean Architecture**:
 ```
 News-Aggregator/
 ├── .agent/                       # Dokumen perencanaan, PRD, Techspec, dan API Contract
+├── .github/
+│   └── workflows/
+│       └── ci.yml                # Automated CI pipeline (Unit tests -race + Docker build)
 ├── cmd/
 │   ├── api/
 │   │   └── main.go               # Entry point aplikasi server API utama
@@ -154,14 +158,17 @@ News-Aggregator/
 │   │   ├── domain.go             # GORM Entities (User, Article)
 │   │   └── requests.go           # DTO Request & Response (JSON binding)
 │   ├── repository/
-│   │   └── postgres.go           # Repository database PostgreSQL
+│   │   └── postgres.go           # Repository PostgreSQL (Atomic Quota & OnConflict Upsert)
 │   └── service/
-│       ├── news_service.go       # Logika bisnis agregator, scraping, dan orkestrasi AI
+│       ├── news_service.go       # Logika bisnis agregator, scraping, singleflight, dan orkestrasi AI
 │       ├── url_filter.go         # Mesin filter URL, deduplikasi, dan proteksi SSRF
 │       ├── url_filter_test.go    # Unit test filter URL dan SSRF
 │       └── news_service_test.go  # Unit test layanan agregator berita
+├── .dockerignore                 # File filter build konteks Docker
 ├── .env                          # File variabel lingkungan lokal (gitignored)
 ├── .env.example                  # Template konfigurasi variabel lingkungan
+├── docker-compose.yml            # Orkestrasi Docker (API Service + PostgreSQL 16)
+├── Dockerfile                    # Multi-stage production container build (Alpine)
 ├── go.mod                        # Definisi modul dan dependensi Golang
 ├── go.sum                        # Checksum dependensi Golang
 └── README.md                     # Dokumentasi utama proyek
@@ -172,11 +179,10 @@ News-Aggregator/
 ## 💻 Prasyarat Sistem
 
 Sebelum menjalankan proyek ini, pastikan sistem Anda telah memiliki:
-1. **Go (Golang)**: Versi 1.21 atau lebih baru (direkomendasikan Go 1.26+).
-   ```bash
-   go version
-   ```
-2. **PostgreSQL**: Server PostgreSQL yang sedang berjalan di port `5432`.
+1. **Docker & Docker Compose** *(Direkomendasikan untuk kemudahan setup)*: Versi 24+
+2. **Atau Secara Lokal:**
+   - **Go (Golang)**: Versi 1.21+ (direkomendasikan Go 1.26+)
+   - **PostgreSQL**: Server PostgreSQL di port `5432`
 3. **API Keys** (Minimal salah satu untuk menjalankan AI Cloud):
    - [Groq API Key](https://console.groq.com/keys)
    - [NVIDIA NIM API Key](https://build.nvidia.com)
@@ -186,26 +192,57 @@ Sebelum menjalankan proyek ini, pastikan sistem Anda telah memiliki:
 
 ## 🚀 Panduan Instalasi & Setup
 
-### 1. Clone Repositori
-```bash
-git clone https://github.com/username/News-Aggregator.git
-cd News-Aggregator
-```
+### Metode 1: Menggunakan Docker Compose (Rekomendasi Cepat ⚡)
+Tidak perlu menginstal PostgreSQL secara manual, seluruh environment akan langsung aktif:
 
-### 2. Unduh Dependensi
-```bash
-go mod tidy
-```
+1. **Clone Repositori:**
+   ```bash
+   git clone https://github.com/Lesmana24/Concurrent-AI-News-Aggregator.git
+   cd Concurrent-AI-News-Aggregator
+   ```
 
-### 3. Konfigurasi Variabel Lingkungan
-Salin file `.env.example` menjadi `.env`:
-```bash
-# Windows PowerShell:
-Copy-Item .env.example .env
+2. **Salin & Sesuaikan Variabel Lingkungan:**
+   ```bash
+   cp .env.example .env
+   ```
+   *Buka `.env` dan masukkan API Key AI Anda (`GROQ_API_KEY`, `NVIDIA_NIM_API_KEY`, atau `GEMINI_API_KEY`).*
 
-# Linux / macOS:
-cp .env.example .env
-```
+3. **Jalankan Aplikasi & Database:**
+   ```bash
+   docker compose up -d --build
+   ```
+   *Perintah ini akan menyalakan container PostgreSQL 16 dan mengompilasi binary API server Go secara otomatis.*
+
+4. **Jalankan Seeder Pengujian di Container:**
+   ```bash
+   docker compose run --rm api /app/seed
+   ```
+
+Layanan siap diakses di `http://localhost:8080`!
+
+---
+
+### Metode 2: Menjalankan Secara Lokal (Manual Go)
+
+1. **Clone & Masuk Direktori:**
+   ```bash
+   git clone https://github.com/Lesmana24/Concurrent-AI-News-Aggregator.git
+   cd Concurrent-AI-News-Aggregator
+   ```
+
+2. **Unduh Dependensi:**
+   ```bash
+   go mod tidy
+   ```
+
+3. **Konfigurasi Variabel Lingkungan:**
+   ```bash
+   # Windows PowerShell:
+   Copy-Item .env.example .env
+
+   # Linux / macOS:
+   cp .env.example .env
+   ```
 Buka file `.env` dan masukkan konfigurasi database PostgreSQL serta API key Anda.
 
 ---

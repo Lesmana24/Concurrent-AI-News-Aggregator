@@ -1,0 +1,10 @@
+.git
+.gitignore
+.env
+*.exe
+*.log
+scratch/
+.agent/
+.system_generated/
+coverage.txt
+
