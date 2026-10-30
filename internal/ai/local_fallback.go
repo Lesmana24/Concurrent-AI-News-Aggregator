@@ -33,6 +33,11 @@ func (p *LocalFallbackProvider) Summarize(ctx context.Context, text string) (str
 	return msg, nil
 }
 
+func (p *LocalFallbackProvider) AnswerQuestion(ctx context.Context, contextArticles, question string) (string, error) {
+	msg := "[Pemberitahuan Sistem] Layanan tanya jawab AI sedang tidak dapat memproses jawaban karena seluruh penyedia AI (Groq, NVIDIA NIM, Google AI Studio) sedang mengalami kendala teknis atau kuota token telah habis. Silakan coba kembali beberapa saat lagi."
+	return msg, nil
+}
+
 func extractSnippet(text string, maxLen int) string {
 	clean := strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
 	if len(clean) <= maxLen {
@@ -46,4 +51,3 @@ func extractSnippet(text string, maxLen int) string {
 	}
 	return truncated + "..."
 }
-

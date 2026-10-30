@@ -44,3 +44,6 @@ func (p *NvidiaProvider) Summarize(ctx context.Context, text string) (string, er
 	return p.client.Summarize(ctx, text)
 }
 
+func (p *NvidiaProvider) AnswerQuestion(ctx context.Context, contextArticles, question string) (string, error) {
+	return p.client.AnswerQuestion(ctx, contextArticles, question)
+}

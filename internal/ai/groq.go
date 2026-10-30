@@ -44,3 +44,6 @@ func (p *GroqProvider) Summarize(ctx context.Context, text string) (string, erro
 	return p.client.Summarize(ctx, text)
 }
 
+func (p *GroqProvider) AnswerQuestion(ctx context.Context, contextArticles, question string) (string, error) {
+	return p.client.AnswerQuestion(ctx, contextArticles, question)
+}

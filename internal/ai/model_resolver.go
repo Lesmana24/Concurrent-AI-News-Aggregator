@@ -128,41 +128,100 @@ func (r *ModelResolver) selectBestModel(providerType string, availableIDs []stri
 		return ""
 	}
 
+	var cleanIDs []string
+	for _, id := range availableIDs {
+		cleanIDs = append(cleanIDs, strings.TrimPrefix(id, "models/"))
+	}
+
 	switch strings.ToLower(providerType) {
 	case "groq":
-		// Priority: llama-3.3 -> llama-3.1 -> llama3 -> any chat/instruct model
-		prefixes := []string{"llama-3.3", "llama-3.1", "llama3-70b", "llama3-8b", "mixtral"}
+		disallowed := []string{"whisper", "guard", "orpheus", "canopylabs"}
+		isAllowed := func(id string) bool {
+			lower := strings.ToLower(id)
+			for _, dis := range disallowed {
+				if strings.Contains(lower, dis) {
+					return false
+				}
+			}
+			return true
+		}
+
+		prefixes := []string{
+			"llama-3.3", "llama-3.1", "llama3",
+			"openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b",
+			"qwen", "gpt-oss", "mixtral",
+		}
 		for _, prefix := range prefixes {
-			for _, id := range availableIDs {
-				if strings.Contains(strings.ToLower(id), prefix) && !strings.Contains(strings.ToLower(id), "whisper") {
+			for _, id := range cleanIDs {
+				if isAllowed(id) && strings.Contains(strings.ToLower(id), prefix) {
 					return id
 				}
 			}
 		}
+		for _, id := range cleanIDs {
+			if isAllowed(id) {
+				return id
+			}
+		}
+
 	case "nvidia":
-		// Priority: meta/llama-3.3 -> meta/llama-3.1 -> meta/llama3 -> mistral
-		prefixes := []string{"meta/llama-3.3", "meta/llama-3.1", "meta/llama3", "mistralai/mistral-large"}
+		disallowed := []string{"embed", "clip", "guard", "reward", "video", "synthetic", "deplot", "vision", "parse"}
+		isAllowed := func(id string) bool {
+			lower := strings.ToLower(id)
+			for _, dis := range disallowed {
+				if strings.Contains(lower, dis) {
+					return false
+				}
+			}
+			return true
+		}
+
+		prefixes := []string{
+			"meta/llama-3.3", "meta/llama-3.1", "nvidia/llama-3.1-nemotron-70b-instruct",
+			"mistralai/mistral-large-2-instruct", "mistralai/mistral-7b-instruct-v0.3",
+			"google/gemma-3-12b-it", "deepseek-ai/deepseek-v4.1-flash", "meta/llama3",
+		}
 		for _, prefix := range prefixes {
-			for _, id := range availableIDs {
-				if strings.Contains(strings.ToLower(id), prefix) {
+			for _, id := range cleanIDs {
+				if isAllowed(id) && strings.Contains(strings.ToLower(id), prefix) {
 					return id
 				}
 			}
 		}
+		for _, id := range cleanIDs {
+			if isAllowed(id) {
+				return id
+			}
+		}
+
 	case "gemini":
-		// Priority: gemini-2.0-flash -> gemini-1.5-flash -> gemini-1.5-pro -> any gemini
-		prefixes := []string{"gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini"}
+		disallowed := []string{"embedding", "image", "tts", "preview", "live", "audio", "robotics", "computer-use", "banana", "transcribe"}
+		isAllowed := func(id string) bool {
+			lower := strings.ToLower(id)
+			for _, dis := range disallowed {
+				if strings.Contains(lower, dis) {
+					return false
+				}
+			}
+			return true
+		}
+
+		prefixes := []string{"gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-flash-latest", "gemini-2.0-flash", "gemini-1.5-flash", "gemini"}
 		for _, prefix := range prefixes {
-			for _, id := range availableIDs {
-				if strings.Contains(strings.ToLower(id), prefix) {
+			for _, id := range cleanIDs {
+				if isAllowed(id) && strings.Contains(strings.ToLower(id), prefix) {
 					return id
 				}
+			}
+		}
+		for _, id := range cleanIDs {
+			if isAllowed(id) {
+				return id
 			}
 		}
 	}
 
-	// Fallback to first available model if no priority matched
-	return availableIDs[0]
+	return cleanIDs[0]
 }
 
 func (r *ModelResolver) getStaticFallbackModel(providerType string) string {
@@ -172,7 +231,7 @@ func (r *ModelResolver) getStaticFallbackModel(providerType string) string {
 	case "nvidia":
 		return "meta/llama-3.1-8b-instruct"
 	case "gemini":
-		return "gemini-1.5-flash"
+		return "gemini-3.8-flash"
 	default:
 		return "default"
 	}

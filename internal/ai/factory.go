@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// NewDefaultSummarizer initializes the standard multi-provider chain based on environment variables:
+// NewDefaultAIService initializes the standard multi-provider chain based on environment variables:
 // Priority: Groq -> NVIDIA NIM -> Google AI Studio -> Local-Fallback
-func NewDefaultSummarizer() Summarizer {
+func NewDefaultAIService() AIService {
 	timeoutSeconds := 25
 	if rawTimeout := os.Getenv("AI_TIMEOUT_SECONDS"); rawTimeout != "" {
 		if parsed, err := strconv.Atoi(rawTimeout); err == nil && parsed > 0 {
@@ -64,3 +64,7 @@ func NewDefaultSummarizer() Summarizer {
 	)
 }
 
+// NewDefaultSummarizer provides backward-compatible summarizer initialization.
+func NewDefaultSummarizer() Summarizer {
+	return NewDefaultAIService()
+}

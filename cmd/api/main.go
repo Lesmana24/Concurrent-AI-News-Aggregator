@@ -43,11 +43,11 @@ func main() {
 	// Initialize Repository
 	repo := repository.NewPostgresRepository(db)
 
-	// Initialize AI Summarizer (Groq -> NVIDIA NIM -> Google AI Studio -> Local-Fallback)
-	aiSummarizer := ai.NewDefaultSummarizer()
+	// Initialize AI Service (Groq -> NVIDIA NIM -> Google AI Studio -> Local-Fallback)
+	aiService := ai.NewDefaultAIService()
 
 	// Initialize Service
-	svc := service.NewNewsService(repo, aiSummarizer)
+	svc := service.NewNewsService(repo, aiService)
 
 	// Initialize Handler
 	handler := deliveryHttp.NewNewsHandler(svc)
@@ -67,6 +67,8 @@ func main() {
 		protected.Use(middleware.APIKeyAuth(svc))
 		{
 			protected.POST("/summarize", handler.Summarize)
+			protected.POST("/qa", handler.QA)
+			protected.POST("/news/qa", handler.QA)
 		}
 	}
 
