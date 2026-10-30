@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"errors"
+	"news-aggregator/internal/models"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -42,6 +43,17 @@ func (m *mockProvider) AnswerQuestionStream(ctx context.Context, contextArticles
 	}
 	outChan <- m.answer
 	return nil
+}
+
+func (m *mockProvider) AnalyzeBias(ctx context.Context, articles []ArticleForAnalysis) (*models.NewsCompareResponse, error) {
+	m.called = true
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &models.NewsCompareResponse{
+		Topic:          "Demo Jakarta",
+		ConsensusFacts: []string{"Aksi berlangsung tertib."},
+	}, nil
 }
 
 func TestFallbackChain_FirstProviderSuccess(t *testing.T) {
@@ -155,6 +167,24 @@ func TestFallbackChain_QAStream_SuccessAndFailover(t *testing.T) {
 	}
 
 	assert.Equal(t, "Streaming token respon.", received)
+	assert.True(t, p1.called)
+	assert.True(t, p2.called)
+}
+
+func TestFallbackChain_AnalyzeBias_SuccessAndFailover(t *testing.T) {
+	p1 := &mockProvider{name: "Groq", configured: true, err: errors.New("503 overloaded")}
+	p2 := &mockProvider{name: "Google AI Studio", configured: true, err: nil}
+
+	chain := NewFallbackChain(p1, p2)
+	articles := []ArticleForAnalysis{
+		{URL: "https://kompas.com/a", Outlet: "Kompas", Title: "Demo", Content: "Teks demo"},
+		{URL: "https://detik.com/b", Outlet: "Detik", Title: "Demo", Content: "Teks demo"},
+	}
+
+	report, provider, err := chain.AnalyzeBias(context.Background(), articles)
+	assert.NoError(t, err)
+	assert.Equal(t, "Google AI Studio", provider)
+	assert.Equal(t, "Demo Jakarta", report.Topic)
 	assert.True(t, p1.called)
 	assert.True(t, p2.called)
 }

@@ -118,6 +118,8 @@ func main() {
 			protected.POST("/news/qa/stream", handler.QAStream)
 			protected.POST("/qa/global", handler.GlobalQA)
 			protected.POST("/news/qa/global", handler.GlobalQA)
+			protected.POST("/news/compare", handler.Compare)
+			protected.POST("/compare", handler.Compare)
 		}
 	}
 

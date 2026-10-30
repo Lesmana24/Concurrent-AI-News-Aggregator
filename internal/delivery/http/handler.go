@@ -276,3 +276,43 @@ func (h *NewsHandler) GlobalQA(c *gin.Context) {
 
 	c.JSON(http.StatusOK, res)
 }
+
+
+// Compare godoc
+// @Summary      Compare multiple news articles for media bias and framing analysis
+// @Description  Analyzes 2 to 5 news articles on the same topic from different outlets, reporting sentiment, framing bias, consensus facts, and discrepancies.
+// @Tags         News
+// @Accept       json
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Param        request body models.NewsCompareRequest true "List of 2 to 5 news URLs to compare"
+// @Success      200 {object} models.NewsCompareResponse "Comparative journalism report with bias and sentiment scores"
+// @Failure      400 {object} map[string]string "Invalid request body or insufficient URLs"
+// @Failure      401 {object} map[string]string "API Key missing or invalid"
+// @Failure      403 {object} map[string]string "Quota exceeded"
+// @Failure      500 {object} map[string]string "Internal processing error"
+// @Router       /api/v1/news/compare [post]
+func (h *NewsHandler) Compare(c *gin.Context) {
+	var req models.NewsCompareRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid request body: %v", err)})
+		return
+	}
+
+	apiKey := c.GetHeader("X-API-KEY")
+	res, err := h.service.CompareArticles(c.Request.Context(), apiKey, req)
+	if err != nil {
+		if strings.Contains(err.Error(), "quota exceeded") {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if strings.Contains(err.Error(), "at least 2 valid") || strings.Contains(err.Error(), "validation failed") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}

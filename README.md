@@ -8,7 +8,7 @@
 [![Cache](https://img.shields.io/badge/Cache-Redis%20L1-DC382D?style=flat&logo=redis&logoColor=white)](https://redis.io/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
 [![AI Providers](https://img.shields.io/badge/AI%20Providers-Groq%20%7C%20NVIDIA%20NIM%20%7C%20Gemini-7B32F5?style=flat)](https://groq.com)
-[![Status](https://img.shields.io/badge/Project%20Status-Production%20Ready%20(Phase%206%20Completed)-success)](#)
+[![Status](https://img.shields.io/badge/Project%20Status-Production%20Ready%20(Phase%207%20Completed)-success)](#)
 
 **Concurrent AI News Aggregator** adalah layanan REST API backend performa tinggi berbasis **Golang** yang dirancang untuk melakukan *web scraping*, ekstraksi teks berita cerdas, peringkasan artikel secara paralel (**Fan-Out/Fan-In Goroutines**), serta fitur **Tanya Jawab Berita (News Q&A)** dengan batasan topik (*strict topic guardrails*).
 
@@ -554,6 +554,75 @@ Memanfaatkan arsitektur **Retrieval-Augmented Generation (RAG)** untuk menjawab 
       "similarity": 0.8654
     }
   ],
+  "provider": "Groq"
+}
+```
+
+---
+
+### 7. Analisis Komparatif & Bias Media (Media Bias & Sentiment Radar)
+Membandingkan 2 hingga 5 artikel berita dari berbagai portal media berbeda mengenai topik/peristiwa yang sama secara paralel. AI mengekstrak **konsensus fakta bersama**, **perbedaan sudut pandang (*framing bias*)**, **fakta unik yang ditonjolkan per media**, dan **skor sentimen kuantitatif** (-1.0 sangat kritis s/d +1.0 sangat positif). Hasil analisis di-cache secara otomatis di Redis L1.
+
+- **Method**: `POST`
+- **URL**: `/api/v1/news/compare` *(atau alias: `/api/v1/compare`)*
+- **Header**:
+  - `Content-Type: application/json`
+  - `X-API-KEY: test-key-123`
+- **Body JSON**:
+```json
+{
+  "urls": [
+    "https://nasional.kompas.com/read/2026/10/29/demo-jakarta-pengamanan",
+    "https://news.detik.com/berita/d-698663/unjuk-rasa-patung-kuda-hari-ini",
+    "https://koran.tempo.co/read/nasional/suara-massa-buruh-tuntut-upah"
+  ]
+}
+```
+
+**Contoh Respon Berhasil (HTTP 200):**
+```json
+{
+  "topic": "Aksi Unjuk Rasa Buruh Terkait Tuntutan Upah di Jakarta",
+  "consensus_facts": [
+    "Aksi demonstrasi berlangsung di sekitar kawasan Patung Kuda dan Balai Kota DKI Jakarta.",
+    "Ribuan personel kepolisian disiagakan untuk menjaga ketertiban umum."
+  ],
+  "media_comparisons": [
+    {
+      "source_url": "https://nasional.kompas.com/...",
+      "outlet_name": "Kompas",
+      "sentiment": "Netral",
+      "sentiment_score": 0.05,
+      "dominant_framing": "Fokus pada kesiapan aparat pengamanan dan rekayasa lalu lintas.",
+      "highlighted_facts": [
+        "Polda Metro Jaya menyiagakan ribuan personel gabungan di puluhan titik."
+      ]
+    },
+    {
+      "source_url": "https://news.detik.com/...",
+      "outlet_name": "Detik",
+      "sentiment": "Netral",
+      "sentiment_score": -0.1,
+      "dominant_framing": "Situasi kemacetan jalan raya dan dampak terhadap aktivitas masyarakat.",
+      "highlighted_facts": [
+        "Penutupan Jalan Medan Merdeka Barat menyebabkan pengalihan rute bus Transjakarta."
+      ]
+    },
+    {
+      "source_url": "https://koran.tempo.co/...",
+      "outlet_name": "Tempo",
+      "sentiment": "Kritis",
+      "sentiment_score": -0.4,
+      "dominant_framing": "Tuntutan kenaikan upah minimum buruh dan aspirasi serikat pekerja.",
+      "highlighted_facts": [
+        "Perwakilan serikat buruh menuntut kenaikan UMP sebesar 8-10%."
+      ]
+    }
+  ],
+  "divergences": [
+    "Kompas dan Detik menonjolkan aspek kelancaran lalu lintas dan kepolisian, sedangkan Tempo berfokus mendalam pada substansi tuntutan ekonomi para pekerja."
+  ],
+  "objective_summary": "Peristiwa unjuk rasa buruh di Jakarta berjalan kondusif dengan pengawalan aparat. Isu sentral berpusat pada negosiasi kenaikan upah, sementara dampak langsung terasa pada mobilitas transportasi sekitar pusat kota.",
   "provider": "Groq"
 }
 ```

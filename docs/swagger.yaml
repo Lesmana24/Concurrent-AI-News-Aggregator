@@ -33,6 +33,58 @@ definitions:
           $ref: '#/definitions/models.SemanticSearchResult'
         type: array
     type: object
+  models.MediaFraming:
+    properties:
+      dominant_framing:
+        description: Sudut pandang atau penekanan utama
+        type: string
+      highlighted_facts:
+        items:
+          type: string
+        type: array
+      outlet_name:
+        type: string
+      sentiment:
+        description: Positif / Netral / Kritis
+        type: string
+      sentiment_score:
+        description: -1.0 to 1.0
+        type: number
+      source_url:
+        type: string
+    type: object
+  models.NewsCompareRequest:
+    properties:
+      urls:
+        items:
+          type: string
+        maxItems: 5
+        minItems: 2
+        type: array
+    required:
+    - urls
+    type: object
+  models.NewsCompareResponse:
+    properties:
+      consensus_facts:
+        items:
+          type: string
+        type: array
+      divergences:
+        items:
+          type: string
+        type: array
+      media_comparisons:
+        items:
+          $ref: '#/definitions/models.MediaFraming'
+        type: array
+      objective_summary:
+        type: string
+      provider:
+        type: string
+      topic:
+        type: string
+    type: object
   models.NewsQARequest:
     properties:
       question:
@@ -121,6 +173,55 @@ paths:
       summary: Health and system readiness check
       tags:
       - System
+  /api/v1/news/compare:
+    post:
+      consumes:
+      - application/json
+      description: Analyzes 2 to 5 news articles on the same topic from different
+        outlets, reporting sentiment, framing bias, consensus facts, and discrepancies.
+      parameters:
+      - description: List of 2 to 5 news URLs to compare
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.NewsCompareRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Comparative journalism report with bias and sentiment scores
+          schema:
+            $ref: '#/definitions/models.NewsCompareResponse'
+        "400":
+          description: Invalid request body or insufficient URLs
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: API Key missing or invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Quota exceeded
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal processing error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Compare multiple news articles for media bias and framing analysis
+      tags:
+      - News
   /api/v1/news/qa:
     post:
       consumes:

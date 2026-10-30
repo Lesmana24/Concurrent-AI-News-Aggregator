@@ -1,6 +1,17 @@
 package ai
 
-import "context"
+import (
+	"context"
+	"news-aggregator/internal/models"
+)
+
+// ArticleForAnalysis contains the source url, outlet name, title, and content for comparative bias analysis.
+type ArticleForAnalysis struct {
+	URL     string `json:"url"`
+	Outlet  string `json:"outlet"`
+	Title   string `json:"title"`
+	Content string `json:"content"`
+}
 
 // Summarizer provides text summarization capabilities across AI providers.
 type Summarizer interface {
@@ -17,11 +28,17 @@ type StreamingQAEngine interface {
 	AnswerQuestionStream(ctx context.Context, contextArticles, question string, outChan chan<- string) (provider string, err error)
 }
 
-// AIService aggregates summarization, standard Q&A, and real-time streaming capabilities.
+// BiasAnalyzer evaluates sentiment, framing, and consensus across multiple news articles.
+type BiasAnalyzer interface {
+	AnalyzeBias(ctx context.Context, articles []ArticleForAnalysis) (result *models.NewsCompareResponse, provider string, err error)
+}
+
+// AIService aggregates summarization, standard Q&A, streaming, and comparative bias analysis capabilities.
 type AIService interface {
 	Summarizer
 	QAEngine
 	StreamingQAEngine
+	BiasAnalyzer
 }
 
 // Provider represents an individual AI service provider (e.g. Groq, NVIDIA NIM, Google AI, Local-Fallback).
@@ -31,4 +48,5 @@ type Provider interface {
 	Summarize(ctx context.Context, text string) (string, error)
 	AnswerQuestion(ctx context.Context, contextArticles, question string) (string, error)
 	AnswerQuestionStream(ctx context.Context, contextArticles, question string, outChan chan<- string) error
+	AnalyzeBias(ctx context.Context, articles []ArticleForAnalysis) (*models.NewsCompareResponse, error)
 }

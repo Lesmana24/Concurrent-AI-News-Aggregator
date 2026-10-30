@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"news-aggregator/internal/models"
 	"time"
 )
 
@@ -50,4 +51,8 @@ func (p *NvidiaProvider) AnswerQuestion(ctx context.Context, contextArticles, qu
 
 func (p *NvidiaProvider) AnswerQuestionStream(ctx context.Context, contextArticles, question string, outChan chan<- string) error {
 	return p.client.AnswerQuestionStream(ctx, contextArticles, question, outChan)
+}
+
+func (p *NvidiaProvider) AnalyzeBias(ctx context.Context, articles []ArticleForAnalysis) (*models.NewsCompareResponse, error) {
+	return p.client.AnalyzeBias(ctx, articles)
 }

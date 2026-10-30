@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"news-aggregator/internal/ai"
 	"news-aggregator/internal/cache"
 	"news-aggregator/internal/models"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +40,7 @@ type NewsService interface {
 	AnswerQuestionStream(ctx context.Context, apiKey string, req models.NewsQARequest, outChan chan<- string) (provider string, sources []string, err error)
 	SemanticSearch(ctx context.Context, query string, limit int) ([]models.SemanticSearchResult, error)
 	GlobalQA(ctx context.Context, apiKey string, req models.GlobalQARequest) (*models.GlobalQAResponse, error)
+	CompareArticles(ctx context.Context, apiKey string, req models.NewsCompareRequest) (*models.NewsCompareResponse, error)
 	GetUser(apiKey string) (*models.User, error)
 	WithCache(c cache.CacheService) NewsService
 	WithEmbedding(emb ai.EmbeddingService) NewsService
@@ -573,4 +576,130 @@ func (s *newsService) GlobalQA(ctx context.Context, apiKey string, req models.Gl
 		Sources:  results,
 		Provider: provider,
 	}, nil
+}
+
+// CompareArticles performs multi-perspective media bias and framing analysis across 2-5 news articles.
+func (s *newsService) CompareArticles(ctx context.Context, apiKey string, req models.NewsCompareRequest) (*models.NewsCompareResponse, error) {
+	user, err := s.GetUser(apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("authentication failed: %w", err)
+	}
+
+	validURLs, err := FilterURLs(req.URLs, 5)
+	if err != nil {
+		return nil, fmt.Errorf("URL validation failed: %w", err)
+	}
+	if len(validURLs) < 2 {
+		return nil, fmt.Errorf("at least 2 valid news URLs are required for comparative bias analysis")
+	}
+
+	// 1. Check Redis L1 Cache (Derived from sorted URLs)
+	sortedURLs := make([]string, len(validURLs))
+	copy(sortedURLs, validURLs)
+	sort.Strings(sortedURLs)
+	cacheKey := "article:bias:" + hashURL(strings.Join(sortedURLs, "|"))
+
+	if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
+		if cachedJSON, err := s.cacheSvc.Get(ctx, cacheKey); err == nil && cachedJSON != "" {
+			var cachedReport models.NewsCompareResponse
+			if err := json.Unmarshal([]byte(cachedJSON), &cachedReport); err == nil && cachedReport.Topic != "" {
+				cachedReport.Provider = cachedReport.Provider + " (Redis L1)"
+				return &cachedReport, nil
+			}
+		}
+	}
+
+	// 2. Deduct user quota (1 quota per comparison analysis)
+	deducted, err := s.repo.DeductUserQuota(user.ID, 1)
+	if err != nil {
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+	if !deducted {
+		return nil, fmt.Errorf("quota exceeded")
+	}
+
+	refundOnFailure := func() {
+		if err := s.repo.RefundUserQuota(user.ID, 1); err != nil {
+			log.Printf("Warning: failed to refund quota to user %d: %v", user.ID, err)
+		}
+	}
+
+	// 3. Fetch/Scrape article contents concurrently
+	articlesForAnalysis := make([]ai.ArticleForAnalysis, len(validURLs))
+	type fetchResult struct {
+		index   int
+		article ai.ArticleForAnalysis
+		err     error
+	}
+
+	resultsChan := make(chan fetchResult, len(validURLs))
+	var wg sync.WaitGroup
+
+	for idx, u := range validURLs {
+		wg.Add(1)
+		go func(i int, articleURL string) {
+			defer wg.Done()
+			title, content, err := s.getOrFetchArticleContent(ctx, articleURL)
+			if err != nil {
+				resultsChan <- fetchResult{index: i, err: err}
+				return
+			}
+			outlet := extractOutletName(articleURL)
+			contentSnippet := SmartSelectChunks(content, title, 2500)
+			resultsChan <- fetchResult{
+				index: i,
+				article: ai.ArticleForAnalysis{
+					URL:     articleURL,
+					Outlet:  outlet,
+					Title:   title,
+					Content: contentSnippet,
+				},
+			}
+		}(idx, u)
+	}
+
+	wg.Wait()
+	close(resultsChan)
+
+	for res := range resultsChan {
+		if res.err != nil {
+			refundOnFailure()
+			return nil, fmt.Errorf("failed to retrieve content from article [%d]: %w", res.index+1, res.err)
+		}
+		articlesForAnalysis[res.index] = res.article
+	}
+
+	// 4. Call AI comparative bias analysis engine
+	report, provider, err := s.aiService.AnalyzeBias(ctx, articlesForAnalysis)
+	if err != nil {
+		refundOnFailure()
+		return nil, fmt.Errorf("media bias analysis failed: %w", err)
+	}
+	report.Provider = provider
+
+	// 5. Cache in Redis L1 (TTL: 24h)
+	if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
+		_ = s.cacheSvc.Set(ctx, cacheKey, report, 24*time.Hour)
+	}
+
+	return report, nil
+}
+
+func extractOutletName(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "Media Online"
+	}
+	hostname := strings.TrimPrefix(parsed.Hostname(), "www.")
+	parts := strings.Split(hostname, ".")
+	if len(parts) >= 2 {
+		outlet := parts[0]
+		if len(parts) >= 3 && (parts[0] == "nasional" || parts[0] == "news" || parts[0] == "regional" || parts[0] == "koran") {
+			outlet = parts[1]
+		}
+		if len(outlet) > 0 {
+			return strings.ToUpper(string(outlet[0])) + outlet[1:]
+		}
+	}
+	return hostname
 }

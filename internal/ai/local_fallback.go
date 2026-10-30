@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"news-aggregator/internal/models"
 	"strings"
 	"time"
 )
@@ -53,6 +54,28 @@ func (p *LocalFallbackProvider) AnswerQuestionStream(ctx context.Context, contex
 		}
 	}
 	return nil
+}
+
+func (p *LocalFallbackProvider) AnalyzeBias(ctx context.Context, articles []ArticleForAnalysis) (*models.NewsCompareResponse, error) {
+	comparisons := make([]models.MediaFraming, len(articles))
+	for i, a := range articles {
+		comparisons[i] = models.MediaFraming{
+			SourceURL:        a.URL,
+			OutletName:       a.Outlet,
+			Sentiment:        "Netral",
+			SentimentScore:   0.0,
+			DominantFraming:  "Pelaporan faktual standar",
+			HighlightedFacts: []string{extractSnippet(a.Content, 100)},
+		}
+	}
+	return &models.NewsCompareResponse{
+		Topic:            "Analisis Komparatif Berita (Fallback Lokal)",
+		ConsensusFacts:   []string{"Semua media melaporkan peristiwa yang sama."},
+		MediaComparisons: comparisons,
+		Divergences:      []string{"Analisis komparatif mendalam tidak dapat dilakukan saat seluruh cloud LLM sedang offline."},
+		ObjectiveSummary: "Layanan cloud AI sedang mengalami kendala teknis. Di atas adalah data awal dari masing-masing portal media.",
+		Provider:         p.Name(),
+	}, nil
 }
 
 func extractSnippet(text string, maxLen int) string {

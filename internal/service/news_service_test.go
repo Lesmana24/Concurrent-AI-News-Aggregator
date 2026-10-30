@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"news-aggregator/internal/ai"
 	"news-aggregator/internal/models"
 	"sync"
 	"sync/atomic"
@@ -116,6 +117,14 @@ func (m *MockAIService) AnswerQuestionStream(ctx context.Context, contextArticle
 		outChan <- "Streamed answer token."
 	}
 	return args.String(0), args.Error(1)
+}
+
+func (m *MockAIService) AnalyzeBias(ctx context.Context, articles []ai.ArticleForAnalysis) (*models.NewsCompareResponse, string, error) {
+	args := m.Called(ctx, articles)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).(*models.NewsCompareResponse), args.String(1), args.Error(2)
 }
 
 func TestSummarizeArticles_QuotaExceeded(t *testing.T) {
@@ -407,4 +416,60 @@ func TestGlobalQA_NoRelevantArticlesGracefulNotice(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, res.Answer, "tidak ditemukan arsip berita yang relevan")
 	assert.Empty(t, res.Sources)
+}
+
+func TestCompareArticles_Success(t *testing.T) {
+	mockRepo := new(MockRepository)
+	mockAI := new(MockAIService)
+	svc := NewNewsService(mockRepo, mockAI)
+
+	user := &models.User{Quota: 10}
+	user.ID = 1
+	mockRepo.On("GetUserByKey", "valid-key").Return(user, nil)
+	mockRepo.On("DeductUserQuota", uint(1), 1).Return(true, nil)
+
+	art1 := models.Article{Title: "Demo 61 Titik", URL: "https://kompas.com/demo", Content: "Polisi amankan 61 titik demo di Jakarta."}
+	art2 := models.Article{Title: "Unjuk Rasa Jakarta", URL: "https://detik.com/demo", Content: "Ribuan massa padati kawasan patung kuda."}
+	mockRepo.On("GetCachedArticles", "https://kompas.com/demo").Return([]models.Article{art1}, nil)
+	mockRepo.On("GetCachedArticles", "https://detik.com/demo").Return([]models.Article{art2}, nil)
+
+	expectedReport := &models.NewsCompareResponse{
+		Topic:          "Aksi Unjuk Rasa di Jakarta",
+		ConsensusFacts: []string{"Aksi demonstrasi terjadi di wilayah Jakarta."},
+		MediaComparisons: []models.MediaFraming{
+			{SourceURL: "https://kompas.com/demo", OutletName: "Kompas", Sentiment: "Netral", SentimentScore: 0.1},
+			{SourceURL: "https://detik.com/demo", OutletName: "Detik", Sentiment: "Kritis", SentimentScore: -0.2},
+		},
+		ObjectiveSummary: "Kedua media meliput peristiwa unjuk rasa dengan sudut pandang pengamanan dan situasi lapangan.",
+	}
+	mockAI.On("AnalyzeBias", mock.Anything, mock.Anything).Return(expectedReport, "Groq", nil)
+
+	req := models.NewsCompareRequest{
+		URLs: []string{"https://kompas.com/demo", "https://detik.com/demo"},
+	}
+
+	report, err := svc.CompareArticles(context.Background(), "valid-key", req)
+	assert.NoError(t, err)
+	assert.Equal(t, "Aksi Unjuk Rasa di Jakarta", report.Topic)
+	assert.Equal(t, "Groq", report.Provider)
+	assert.Len(t, report.MediaComparisons, 2)
+}
+
+func TestCompareArticles_RejectsLessThanTwoURLs(t *testing.T) {
+	mockRepo := new(MockRepository)
+	mockAI := new(MockAIService)
+	svc := NewNewsService(mockRepo, mockAI)
+
+	user := &models.User{Quota: 10}
+	user.ID = 1
+	mockRepo.On("GetUserByKey", "valid-key").Return(user, nil)
+
+	req := models.NewsCompareRequest{
+		URLs: []string{"https://kompas.com/demo"},
+	}
+
+	report, err := svc.CompareArticles(context.Background(), "valid-key", req)
+	assert.Error(t, err)
+	assert.Nil(t, report)
+	assert.Contains(t, err.Error(), "at least 2 valid news URLs")
 }

@@ -45,6 +45,81 @@
                 }
             }
         },
+        "/api/v1/news/compare": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Analyzes 2 to 5 news articles on the same topic from different outlets, reporting sentiment, framing bias, consensus facts, and discrepancies.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "News"
+                ],
+                "summary": "Compare multiple news articles for media bias and framing analysis",
+                "parameters": [
+                    {
+                        "description": "List of 2 to 5 news URLs to compare",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.NewsCompareRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Comparative journalism report with bias and sentiment scores",
+                        "schema": {
+                            "$ref": "#/definitions/models.NewsCompareResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body or insufficient URLs",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "API Key missing or invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Quota exceeded",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal processing error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/news/qa": {
             "post": {
                 "security": [
@@ -528,6 +603,83 @@
                     "items": {
                         "$ref": "#/definitions/models.SemanticSearchResult"
                     }
+                }
+            }
+        },
+        "models.MediaFraming": {
+            "type": "object",
+            "properties": {
+                "dominant_framing": {
+                    "description": "Sudut pandang atau penekanan utama",
+                    "type": "string"
+                },
+                "highlighted_facts": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "outlet_name": {
+                    "type": "string"
+                },
+                "sentiment": {
+                    "description": "Positif / Netral / Kritis",
+                    "type": "string"
+                },
+                "sentiment_score": {
+                    "description": "-1.0 to 1.0",
+                    "type": "number"
+                },
+                "source_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.NewsCompareRequest": {
+            "type": "object",
+            "required": [
+                "urls"
+            ],
+            "properties": {
+                "urls": {
+                    "type": "array",
+                    "maxItems": 5,
+                    "minItems": 2,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "models.NewsCompareResponse": {
+            "type": "object",
+            "properties": {
+                "consensus_facts": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "divergences": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "media_comparisons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.MediaFraming"
+                    }
+                },
+                "objective_summary": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "topic": {
+                    "type": "string"
                 }
             }
         },
