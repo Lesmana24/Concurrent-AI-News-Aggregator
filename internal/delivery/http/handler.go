@@ -3,6 +3,7 @@ package http
 import (
 	"fmt"
 	"net/http"
+	"news-aggregator/internal/cache"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/service"
 	"strings"
@@ -13,8 +14,9 @@ import (
 )
 
 type NewsHandler struct {
-	service service.NewsService
-	db      *gorm.DB
+	service  service.NewsService
+	db       *gorm.DB
+	cacheSvc cache.CacheService
 }
 
 func NewNewsHandler(s service.NewsService, dbs ...*gorm.DB) *NewsHandler {
@@ -23,6 +25,11 @@ func NewNewsHandler(s service.NewsService, dbs ...*gorm.DB) *NewsHandler {
 		db = dbs[0]
 	}
 	return &NewsHandler{service: s, db: db}
+}
+
+func (h *NewsHandler) WithCache(c cache.CacheService) *NewsHandler {
+	h.cacheSvc = c
+	return h
 }
 
 // Health godoc
@@ -42,15 +49,20 @@ func (h *NewsHandler) Health(c *gin.Context) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"status":   "degraded",
 				"database": dbStatus,
-				"time":     time.Now().UTC().Format(time.RFC3339),
 			})
 			return
 		}
 	}
 
+	redisStatus := "disabled"
+	if h.cacheSvc != nil && h.cacheSvc.IsAvailable() {
+		redisStatus = "connected"
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":   "ok",
 		"database": dbStatus,
+		"redis":    redisStatus,
 		"time":     time.Now().UTC().Format(time.RFC3339),
 	})
 }

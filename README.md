@@ -4,6 +4,7 @@
 [![Framework](https://img.shields.io/badge/Framework-Gin%20Gonic-008ECF?style=flat&logo=gin)](https://gin-gonic.com/)
 [![ORM](https://img.shields.io/badge/ORM-GORM-E94E32?style=flat&logo=go&logoColor=white)](https://gorm.io/)
 [![Database](https://img.shields.io/badge/Database-PostgreSQL-336791?style=flat&logo=postgresql)](https://www.postgresql.org/)
+[![Cache](https://img.shields.io/badge/Cache-Redis%20L1-DC382D?style=flat&logo=redis&logoColor=white)](https://redis.io/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
 [![AI Providers](https://img.shields.io/badge/AI%20Providers-Groq%20%7C%20NVIDIA%20NIM%20%7C%20Gemini-7B32F5?style=flat)](https://groq.com)
 [![Status](https://img.shields.io/badge/Project%20Status-Production%20Ready%20(Phase%205%20Completed)-success)](#)

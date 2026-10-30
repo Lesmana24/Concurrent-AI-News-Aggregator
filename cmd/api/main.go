@@ -7,11 +7,13 @@ import (
 
 	_ "news-aggregator/docs"
 	"news-aggregator/internal/ai"
+	"news-aggregator/internal/cache"
 	deliveryHttp "news-aggregator/internal/delivery/http"
 	"news-aggregator/internal/middleware"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/repository"
 	"news-aggregator/internal/service"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -71,19 +73,30 @@ func main() {
 	// Initialize Repository
 	repo := repository.NewPostgresRepository(db)
 
+	// Initialize Redis L1 Cache (Graceful fallback to PostgreSQL L2 if unreachable)
+	redisHost := os.Getenv("REDIS_HOST")
+	redisPort := os.Getenv("REDIS_PORT")
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+	redisCache := cache.NewRedisCache(redisHost, redisPort, redisPassword)
+	defer redisCache.Close()
+
 	// Initialize AI Service (Groq -> NVIDIA NIM -> Google AI Studio -> Local-Fallback)
 	aiService := ai.NewDefaultAIService()
 
-	// Initialize Service
-	svc := service.NewNewsService(repo, aiService)
+	// Initialize Service with L1 Cache
+	svc := service.NewNewsService(repo, aiService).WithCache(redisCache)
 
-	// Initialize Handler with DB reference for live health checks
-	handler := deliveryHttp.NewNewsHandler(svc, db)
+	// Initialize Handler with DB and Redis references for live health checks
+	handler := deliveryHttp.NewNewsHandler(svc, db).WithCache(redisCache)
 
 	// Gin Engine with Structured Logging & Request-ID Middleware
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestIDAndLogger())
+
+	// Distributed Rate Limiting (Default: 60 requests per minute)
+	rpm, _ := strconv.Atoi(os.Getenv("RATE_LIMIT_RPM"))
+	r.Use(middleware.RateLimit(redisCache, rpm))
 
 	// Swagger Interactive Documentation UI
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

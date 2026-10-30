@@ -2,10 +2,14 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"news-aggregator/internal/ai"
+	"news-aggregator/internal/cache"
 	"news-aggregator/internal/models"
 	"strings"
 	"sync"
@@ -28,11 +32,13 @@ type NewsService interface {
 	SummarizeArticles(ctx context.Context, apiKey string, urls []string) ([]models.ArticleResponse, error)
 	AnswerQuestion(ctx context.Context, apiKey string, req models.NewsQARequest) (*models.NewsQAResponse, error)
 	GetUser(apiKey string) (*models.User, error)
+	WithCache(c cache.CacheService) NewsService
 }
 
 type newsService struct {
 	repo      Repository
 	aiService ai.AIService
+	cacheSvc  cache.CacheService
 	sfGroup   singleflight.Group
 }
 
@@ -54,6 +60,11 @@ func NewNewsService(repo Repository, aiServices ...ai.AIService) NewsService {
 		repo:      repo,
 		aiService: aiSvc,
 	}
+}
+
+func (s *newsService) WithCache(c cache.CacheService) NewsService {
+	s.cacheSvc = c
+	return s
 }
 
 func (s *newsService) GetUser(apiKey string) (*models.User, error) {
@@ -180,28 +191,52 @@ func (s *newsService) AnswerQuestion(ctx context.Context, apiKey string, req mod
 }
 
 func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*models.ArticleResponse, error) {
-	// 1. Direct cache-first check
+	cacheKey := "article:summary:" + hashURL(url)
+
+	// 1. Check Redis L1 Cache (Fastest: ~1-2ms)
+	if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
+		if cachedJSON, err := s.cacheSvc.Get(ctx, cacheKey); err == nil && cachedJSON != "" {
+			var res models.ArticleResponse
+			if err := json.Unmarshal([]byte(cachedJSON), &res); err == nil && res.Summary != "" {
+				res.Source = res.Source + " (Redis L1)"
+				return &res, nil
+			}
+		}
+	}
+
+	// 2. Check PostgreSQL L2 Cache
 	cached, err := s.repo.GetCachedArticles(url)
 	if err == nil && len(cached) > 0 && strings.TrimSpace(cached[0].Summary) != "" {
-		return &models.ArticleResponse{
+		res := &models.ArticleResponse{
 			Title:   cached[0].Title,
 			URL:     cached[0].URL,
 			Summary: cached[0].Summary,
 			Source:  cached[0].AIProvider + " (Cached)",
-		}, nil
+		}
+
+		// Warm Redis L1 Cache (TTL: 24h)
+		if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
+			_ = s.cacheSvc.Set(ctx, cacheKey, res, 24*time.Hour)
+		}
+
+		return res, nil
 	}
 
-	// 2. Singleflight deduplication to prevent cache stampede
+	// 3. Singleflight deduplication to prevent cache stampede
 	val, err, _ := s.sfGroup.Do(url, func() (interface{}, error) {
 		// Double-check cache in case another flight just finished
 		cached, err := s.repo.GetCachedArticles(url)
 		if err == nil && len(cached) > 0 && strings.TrimSpace(cached[0].Summary) != "" {
-			return &models.ArticleResponse{
+			res := &models.ArticleResponse{
 				Title:   cached[0].Title,
 				URL:     cached[0].URL,
 				Summary: cached[0].Summary,
 				Source:  cached[0].AIProvider + " (Cached)",
-			}, nil
+			}
+			if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
+				_ = s.cacheSvc.Set(ctx, cacheKey, res, 24*time.Hour)
+			}
+			return res, nil
 		}
 
 		var title, content string
@@ -234,12 +269,19 @@ func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*mod
 			log.Printf("Warning: failed to cache article %s: %v", url, err)
 		}
 
-		return &models.ArticleResponse{
+		res := &models.ArticleResponse{
 			Title:   title,
 			URL:     url,
 			Summary: summary,
 			Source:  provider,
-		}, nil
+		}
+
+		// Cache in Redis L1
+		if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
+			_ = s.cacheSvc.Set(ctx, cacheKey, res, 24*time.Hour)
+		}
+
+		return res, nil
 	})
 
 	if err != nil {
@@ -251,13 +293,28 @@ func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*mod
 }
 
 func (s *newsService) getOrFetchArticleContent(ctx context.Context, url string) (string, string, error) {
-	// 1. Cache-first lookup
+	contentKey := "article:content:" + hashURL(url)
+
+	// 1. Check Redis L1 Cache
+	if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
+		if cachedJSON, err := s.cacheSvc.Get(ctx, contentKey); err == nil && cachedJSON != "" {
+			var art models.Article
+			if err := json.Unmarshal([]byte(cachedJSON), &art); err == nil && art.Content != "" {
+				return art.Title, art.Content, nil
+			}
+		}
+	}
+
+	// 2. Check PostgreSQL L2 Cache
 	cached, err := s.repo.GetCachedArticles(url)
 	if err == nil && len(cached) > 0 && strings.TrimSpace(cached[0].Content) != "" {
+		if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
+			_ = s.cacheSvc.Set(ctx, contentKey, cached[0], 24*time.Hour)
+		}
 		return cached[0].Title, cached[0].Content, nil
 	}
 
-	// 2. Singleflight content fetch
+	// 3. Singleflight content fetch
 	val, err, _ := s.sfGroup.Do("content:"+url, func() (interface{}, error) {
 		cached, err := s.repo.GetCachedArticles(url)
 		if err == nil && len(cached) > 0 && strings.TrimSpace(cached[0].Content) != "" {
@@ -277,6 +334,10 @@ func (s *newsService) getOrFetchArticleContent(ctx context.Context, url string) 
 		}
 		if err := s.repo.BatchInsertArticles([]models.Article{article}); err != nil {
 			log.Printf("Warning: failed to cache article content for %s: %v", url, err)
+		}
+
+		if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
+			_ = s.cacheSvc.Set(ctx, contentKey, article, 24*time.Hour)
 		}
 
 		return article, nil
@@ -353,4 +414,9 @@ func (s *newsService) scrapeArticle(ctx context.Context, url string) (*ScrapedAr
 		Title:   title,
 		Content: content,
 	}, nil
+}
+
+func hashURL(u string) string {
+	h := sha256.Sum256([]byte(u))
+	return hex.EncodeToString(h[:])
 }
