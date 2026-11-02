@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Header } from './components/Header'
 import { TelegramBanner } from './components/TelegramBanner'
 import { Navigation, type TabType } from './components/Navigation'
@@ -7,7 +7,16 @@ import { QuickScraper } from './components/QuickScraper'
 import { MediaBiasSpectrum } from './components/MediaBiasSpectrum'
 import { SemanticInquiry } from './components/SemanticInquiry'
 import { SystemTelemetry } from './components/SystemTelemetry'
-import type { UserMe } from './types'
+import { CommandPalette } from './components/CommandPalette'
+import { ApiKeyModal } from './components/ApiKeyModal'
+import { ExportModal } from './components/ExportModal'
+import {
+  WatchlistDrawer,
+  type WatchlistItem,
+  getStoredWatchlist,
+  saveStoredWatchlist,
+} from './components/WatchlistDrawer'
+import type { UserMe, TrendingClusterItem } from './types'
 import { api, DEFAULT_DEMO_KEY } from './services/api'
 
 export const App: React.FC = () => {
@@ -18,6 +27,18 @@ export const App: React.FC = () => {
   const [user, setUser] = useState<UserMe | null>(null)
   const [isOnline, setIsOnline] = useState(true)
   const [prefillComparisonUrls, setPrefillComparisonUrls] = useState<string[]>([])
+
+  // SaaS Modals State
+  const [isCmdOpen, setIsCmdOpen] = useState(false)
+  const [isApiKeyOpen, setIsApiKeyOpen] = useState(false)
+  const [isExportOpen, setIsExportOpen] = useState(false)
+  const [isWatchlistOpen, setIsWatchlistOpen] = useState(false)
+
+  // Global Clusters State (for Export Suite)
+  const [trendingClusters, setTrendingClusters] = useState<TrendingClusterItem[]>([])
+
+  // Watchlist State (persistent via localStorage)
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>(() => getStoredWatchlist())
 
   const loadUserData = async (key = apiKey) => {
     try {
@@ -46,20 +67,82 @@ export const App: React.FC = () => {
     return () => clearInterval(interval)
   }, [apiKey])
 
+  // Global Cmd+K / Ctrl+K keyboard shortcut listener
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setIsCmdOpen((prev) => !prev)
+      }
+    }
+
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [])
+
+  // Watchlist Helpers
+  const handleToggleWatchlist = useCallback((item: WatchlistItem) => {
+    setWatchlist((prev) => {
+      const exists = prev.some((x) => x.id === item.id || (item.url && x.url === item.url))
+      let updated: WatchlistItem[]
+      if (exists) {
+        updated = prev.filter((x) => x.id !== item.id && x.url !== item.url)
+      } else {
+        updated = [item, ...prev]
+      }
+      saveStoredWatchlist(updated)
+      return updated
+    })
+  }, [])
+
+  const handleRemoveWatchlistItem = useCallback((id: string) => {
+    setWatchlist((prev) => {
+      const updated = prev.filter((x) => x.id !== id)
+      saveStoredWatchlist(updated)
+      return updated
+    })
+  }, [])
+
+  const handleClearWatchlist = useCallback(() => {
+    saveStoredWatchlist([])
+    setWatchlist([])
+  }, [])
+
+  const isWatched = useCallback(
+    (url: string) => {
+      return watchlist.some((x) => x.url === url)
+    },
+    [watchlist]
+  )
+
   const handleSelectForComparison = (urls: string[]) => {
     setPrefillComparisonUrls(urls)
     setActiveTab('bias')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  const handleTriggerRecompute = async () => {
+    try {
+      await api.recomputeClusters(apiKey)
+      const data = await api.getTrending(8)
+      setTrendingClusters(data.topics || [])
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Gagal menghitung ulang kluster')
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans bg-grid-pattern selection:bg-amber-500/30 selection:text-amber-300 max-w-full overflow-x-hidden">
-      {/* 1. Sticky Header Bar */}
+      {/* 1. Sticky Header Bar with SaaS Actions */}
       <Header
         user={user}
         apiKey={apiKey}
-        onApiKeyChange={(k) => setApiKey(k)}
         isOnline={isOnline}
+        watchlistCount={watchlist.length}
+        onOpenCommandPalette={() => setIsCmdOpen(true)}
+        onOpenApiKeyModal={() => setIsApiKeyOpen(true)}
+        onOpenExportModal={() => setIsExportOpen(true)}
+        onOpenWatchlist={() => setIsWatchlistOpen(true)}
       />
 
       {/* 2. Telegram Bot Gateway Showcase Banner */}
@@ -74,6 +157,10 @@ export const App: React.FC = () => {
           <TrendingRadar
             apiKey={apiKey}
             onSelectForComparison={handleSelectForComparison}
+            onOpenExport={() => setIsExportOpen(true)}
+            onToggleWatchlist={handleToggleWatchlist}
+            isWatched={isWatched}
+            onClustersLoaded={setTrendingClusters}
           />
         )}
 
@@ -81,6 +168,8 @@ export const App: React.FC = () => {
           <QuickScraper
             apiKey={apiKey}
             onSelectForComparison={handleSelectForComparison}
+            onToggleWatchlist={handleToggleWatchlist}
+            isWatched={isWatched}
           />
         )}
 
@@ -135,6 +224,39 @@ export const App: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      {/* 6. SaaS Modals & Drawers */}
+      <CommandPalette
+        isOpen={isCmdOpen}
+        onClose={() => setIsCmdOpen(false)}
+        onSelectTab={setActiveTab}
+        onOpenApiKeyModal={() => setIsApiKeyOpen(true)}
+        onOpenExportModal={() => setIsExportOpen(true)}
+        onOpenWatchlist={() => setIsWatchlistOpen(true)}
+        onTriggerRecompute={handleTriggerRecompute}
+      />
+
+      <ApiKeyModal
+        isOpen={isApiKeyOpen}
+        onClose={() => setIsApiKeyOpen(false)}
+        apiKey={apiKey}
+        onApiKeyChange={(k) => setApiKey(k)}
+        user={user}
+      />
+
+      <ExportModal
+        isOpen={isExportOpen}
+        onClose={() => setIsExportOpen(false)}
+        clusters={trendingClusters}
+      />
+
+      <WatchlistDrawer
+        isOpen={isWatchlistOpen}
+        onClose={() => setIsWatchlistOpen(false)}
+        items={watchlist}
+        onRemoveItem={handleRemoveWatchlistItem}
+        onClearAll={handleClearWatchlist}
+      />
     </div>
   )
 }

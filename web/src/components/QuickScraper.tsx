@@ -1,16 +1,36 @@
-import React, { useState, useEffect } from 'react'
-import { Radio, Send, ExternalLink, RefreshCw, CheckCircle2, AlertCircle, Scale, Image as ImageIcon } from 'lucide-react'
+import React, { useState, useEffect, useMemo } from 'react'
+import {
+  Radio,
+  Send,
+  ExternalLink,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  Scale,
+  Image as ImageIcon,
+  Search,
+  Bookmark,
+  BookmarkCheck,
+} from 'lucide-react'
 import type { Article } from '../types'
 import { api } from '../services/api'
+import type { WatchlistItem } from './WatchlistDrawer'
 
 interface QuickScraperProps {
   apiKey: string
   onSelectForComparison: (urls: string[]) => void
+  onToggleWatchlist?: (item: WatchlistItem) => void
+  isWatched?: (url: string) => boolean
 }
 
 const FALLBACK_ARTICLE_IMAGE = 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=600&q=80'
 
-export const QuickScraper: React.FC<QuickScraperProps> = ({ apiKey, onSelectForComparison }) => {
+export const QuickScraper: React.FC<QuickScraperProps> = ({
+  apiKey,
+  onSelectForComparison,
+  onToggleWatchlist,
+  isWatched,
+}) => {
   const [urlInput, setUrlInput] = useState('')
   const [ingesting, setIngesting] = useState(false)
   const [ingestedResult, setIngestedResult] = useState<Article | null>(null)
@@ -19,22 +39,25 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({ apiKey, onSelectForC
   // Wire feed state
   const [articles, setArticles] = useState<Article[]>([])
   const [selectedSource, setSelectedSource] = useState<string>('')
+  const [searchFilter, setSearchFilter] = useState<string>('')
   const [loadingWire, setLoadingWire] = useState(true)
   const [wireError, setWireError] = useState<string | null>(null)
 
   const sources = [
     { label: 'Semua Media', value: '' },
+    { label: 'CNN Indonesia', value: 'CNN Indonesia' },
     { label: 'Antara News', value: 'Antara News' },
     { label: 'CNBC Indonesia', value: 'CNBC Indonesia' },
-    { label: 'CNN Indonesia', value: 'CNN Indonesia' },
     { label: 'Republika', value: 'Republika' },
+    { label: 'Detikcom', value: 'Detikcom' },
+    { label: 'Kompas', value: 'Kompas' },
   ]
 
   const fetchWire = async (sourceFilter = selectedSource) => {
     setLoadingWire(true)
     setWireError(null)
     try {
-      const data = await api.getRecentArticles(20, sourceFilter)
+      const data = await api.getRecentArticles(30, sourceFilter)
       setArticles(data.articles || [])
     } catch (err: unknown) {
       setWireError(err instanceof Error ? err.message : 'Gagal memuat feed berita terkini')
@@ -46,6 +69,18 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({ apiKey, onSelectForC
   useEffect(() => {
     fetchWire(selectedSource)
   }, [selectedSource])
+
+  // Filtered articles based on live search
+  const filteredArticles = useMemo(() => {
+    if (!searchFilter.trim()) return articles
+    const q = searchFilter.toLowerCase().trim()
+    return articles.filter(
+      (a) =>
+        a.title.toLowerCase().includes(q) ||
+        a.summary.toLowerCase().includes(q) ||
+        a.source.toLowerCase().includes(q)
+    )
+  }, [articles, searchFilter])
 
   const handleIngestURL = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -80,6 +115,19 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({ apiKey, onSelectForC
     }) + ' WIB'
   }
 
+  const handleToggleArticleWatchlist = (art: Article) => {
+    if (!onToggleWatchlist) return
+    onToggleWatchlist({
+      id: `art-${art.id}-${art.url}`,
+      title: art.title,
+      url: art.url,
+      source: art.source,
+      type: 'article',
+      summary: art.summary,
+      dateAdded: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+    })
+  }
+
   return (
     <div className="space-y-8 sm:space-y-10">
       {/* 1. Quick Scraper Sandbox */}
@@ -99,54 +147,49 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({ apiKey, onSelectForC
         <form onSubmit={handleIngestURL} className="flex flex-col sm:flex-row gap-2.5">
           <input
             type="url"
+            required
+            placeholder="https://www.cnnindonesia.com/nasional/..."
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
-            placeholder="https://www.antaranews.com/berita/... atau cnbcindonesia.com/..."
-            required
-            className="flex-1 bg-slate-950 border border-slate-700/80 focus:border-amber-500 rounded-xl px-4 py-3 text-base sm:text-sm font-mono text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors min-h-[44px]"
+            className="flex-1 px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 focus:border-amber-500 focus:outline-none text-slate-100 text-xs sm:text-sm font-sans placeholder-slate-500 transition min-h-[44px]"
           />
           <button
             type="submit"
-            disabled={ingesting || !urlInput.trim()}
-            className="w-full sm:w-auto px-6 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white text-xs sm:text-sm font-mono font-bold transition disabled:opacity-50 flex items-center justify-center gap-2 shrink-0 shadow-lg min-h-[44px] touch-manipulation"
+            disabled={ingesting}
+            className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-semibold text-xs sm:text-sm font-mono transition flex items-center justify-center gap-2 shrink-0 shadow-md shadow-amber-500/20 disabled:opacity-50 min-h-[44px] touch-manipulation"
           >
             {ingesting ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Mengekstrak...</span>
+                <span>Mengekstrak AI...</span>
               </>
             ) : (
               <>
                 <Send className="w-4 h-4" />
-                <span>Ingest URL</span>
+                <span>Ingest & Ringkas</span>
               </>
             )}
           </button>
         </form>
 
-        {/* Ingest Error State */}
         {ingestError && (
-          <div className="p-3.5 sm:p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center gap-2.5 text-xs font-mono text-rose-300">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
             <span>{ingestError}</span>
           </div>
         )}
 
-        {/* Ingested Result Card */}
         {ingestedResult && (
-          <div className="p-4 sm:p-5 rounded-xl bg-slate-950 border border-emerald-500/40 space-y-3 sm:space-y-4 shadow-lg animate-in fade-in">
+          <div className="p-4 sm:p-5 rounded-xl bg-slate-950 border border-amber-500/30 space-y-3">
             <div className="flex items-center justify-between text-xs font-mono">
               <span className="text-emerald-400 flex items-center gap-1.5 font-bold">
-                <CheckCircle2 className="w-4 h-4" /> Ekstraksi Berhasil
+                <CheckCircle2 className="w-4 h-4" /> Berhasil Diekstrak & Diringkas
               </span>
-              <span className="px-2.5 py-0.5 rounded-md bg-slate-800 text-slate-200 border border-slate-700 font-medium">
-                {ingestedResult.source || 'Media Terverifikasi'}
-              </span>
+              <span className="text-slate-400">{ingestedResult.source}</span>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-3.5 sm:gap-4 items-start">
-              {/* Image */}
-              <div className="w-full sm:w-48 h-40 sm:h-32 rounded-xl overflow-hidden bg-slate-900 border border-slate-800 shrink-0">
+            <div className="flex flex-col sm:flex-row gap-4 items-start">
+              <div className="w-full sm:w-44 h-32 rounded-lg overflow-hidden bg-slate-900 border border-slate-800 shrink-0">
                 <img
                   src={ingestedResult.image_url || FALLBACK_ARTICLE_IMAGE}
                   alt={ingestedResult.title}
@@ -174,12 +217,21 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({ apiKey, onSelectForC
                     <span>Lihat Halaman Asli</span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
-                  <button
-                    onClick={() => onSelectForComparison([ingestedResult.url])}
-                    className="text-amber-400 hover:text-amber-300 font-bold min-h-[36px] flex items-center gap-1"
-                  >
-                    + Masukkan ke Spektrum Bias
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handleToggleArticleWatchlist(ingestedResult)}
+                      className="text-slate-400 hover:text-amber-400 min-h-[36px] flex items-center gap-1"
+                    >
+                      <Bookmark className="w-3.5 h-3.5" />
+                      <span>Simpan</span>
+                    </button>
+                    <button
+                      onClick={() => onSelectForComparison([ingestedResult.url])}
+                      className="text-amber-400 hover:text-amber-300 font-bold min-h-[36px] flex items-center gap-1"
+                    >
+                      + Masukkan ke Spektrum Bias
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -196,37 +248,65 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({ apiKey, onSelectForC
               <h3 className="font-editorial text-xl sm:text-2xl font-bold text-slate-100">
                 Live News Wire Feed
               </h3>
+              <span className="text-xs font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
+                {filteredArticles.length} Berita
+              </span>
             </div>
             <p className="text-xs sm:text-sm text-slate-300 font-sans mt-0.5">
               Arsip berita yang dikumpulkan mandiri oleh Harvester latar belakang tiap siklus cron.
             </p>
           </div>
 
-          <button
-            onClick={() => fetchWire()}
-            disabled={loadingWire}
-            className="flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-mono text-slate-200 transition min-h-[44px] touch-manipulation self-start sm:self-auto"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${loadingWire ? 'animate-spin' : ''}`} />
-            <span>Refresh Wire</span>
-          </button>
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              onClick={() => fetchWire()}
+              disabled={loadingWire}
+              className="flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-mono text-slate-200 transition min-h-[40px] touch-manipulation"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${loadingWire ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+          </div>
         </div>
 
-        {/* Source Filter Pills (Swipeable on Mobile) */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar overscroll-x-contain py-1">
-          {sources.map((src) => (
-            <button
-              key={src.value}
-              onClick={() => setSelectedSource(src.value)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-mono whitespace-nowrap shrink-0 transition min-h-[40px] touch-manipulation ${
-                selectedSource === src.value
-                  ? 'bg-amber-600 text-white font-bold shadow-md'
-                  : 'bg-slate-900 text-slate-400 hover:text-slate-100 border border-slate-800 hover:border-slate-700'
-              }`}
-            >
-              {src.label}
-            </button>
-          ))}
+        {/* Multi-Facet Filter Bar: Search Box + Media Outlets */}
+        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+          {/* Live Search Input */}
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              placeholder="Cari kata kunci dalam feed (misal: 'inflasi', 'gibran', 'ekonomi')..."
+              className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-900/90 border border-slate-700/80 focus:border-amber-500 focus:outline-none text-xs sm:text-sm text-slate-100 placeholder-slate-400 font-sans min-h-[40px]"
+            />
+            {searchFilter && (
+              <button
+                onClick={() => setSearchFilter('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-mono text-slate-400 hover:text-slate-200"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Source Filter Pills (Swipeable on Mobile) */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar overscroll-x-contain py-1">
+            {sources.map((src) => (
+              <button
+                key={src.value}
+                onClick={() => setSelectedSource(src.value)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono whitespace-nowrap shrink-0 transition min-h-[36px] touch-manipulation ${
+                  selectedSource === src.value
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                    : 'bg-slate-900 text-slate-400 hover:text-slate-100 border border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                {src.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Wire Articles List */}
@@ -251,78 +331,105 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({ apiKey, onSelectForC
           </div>
         )}
 
-        {!loadingWire && !wireError && articles.length === 0 && (
+        {!loadingWire && !wireError && filteredArticles.length === 0 && (
           <div className="p-8 sm:p-10 text-center rounded-2xl bg-slate-900/40 border border-slate-800 text-xs sm:text-sm font-mono text-slate-400">
-            Belum ada artikel yang sesuai dengan filter ini.
+            Belum ada artikel yang sesuai dengan filter atau kata kunci "{searchFilter}".
           </div>
         )}
 
-        {!loadingWire && !wireError && articles.length > 0 && (
+        {!loadingWire && !wireError && filteredArticles.length > 0 && (
           <div className="space-y-4">
-            {articles.map((art) => (
-              <article
-                key={art.id}
-                className="group p-4 sm:p-5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800/90 hover:border-amber-500/40 transition-all shadow-md flex flex-col sm:flex-row gap-4 sm:gap-5 items-start"
-              >
-                {/* Article Thumbnail */}
-                <div className="w-full sm:w-44 h-40 sm:h-28 rounded-xl overflow-hidden bg-slate-950 border border-slate-800 shrink-0 relative">
-                  <img
-                    src={art.image_url || FALLBACK_ARTICLE_IMAGE}
-                    alt={art.title}
-                    loading="lazy"
-                    onError={(e) => {
-                      ;(e.target as HTMLImageElement).src = FALLBACK_ARTICLE_IMAGE
-                    }}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                  {!art.image_url && (
-                    <div className="absolute top-2 left-2 bg-slate-950/80 p-1 rounded text-slate-400">
-                      <ImageIcon className="w-3 h-3" />
-                    </div>
-                  )}
-                </div>
+            {filteredArticles.map((art) => {
+              const bookmarked = isWatched ? isWatched(art.url) : false
+              return (
+                <article
+                  key={art.id}
+                  className="group p-4 sm:p-5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800/90 hover:border-amber-500/40 transition-all shadow-md flex flex-col sm:flex-row gap-4 sm:gap-5 items-start"
+                >
+                  {/* Article Thumbnail */}
+                  <div className="w-full sm:w-44 h-40 sm:h-28 rounded-xl overflow-hidden bg-slate-950 border border-slate-800 shrink-0 relative">
+                    <img
+                      src={art.image_url || FALLBACK_ARTICLE_IMAGE}
+                      alt={art.title}
+                      loading="lazy"
+                      onError={(e) => {
+                        ;(e.target as HTMLImageElement).src = FALLBACK_ARTICLE_IMAGE
+                      }}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    {!art.image_url && (
+                      <div className="absolute top-2 left-2 bg-slate-950/80 p-1 rounded text-slate-400">
+                        <ImageIcon className="w-3 h-3" />
+                      </div>
+                    )}
+                  </div>
 
-                {/* Article Content */}
-                <div className="flex-1 space-y-2 w-full flex flex-col justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs font-mono mb-1">
-                      <span className="px-2.5 py-0.5 rounded-md bg-slate-800 text-slate-200 border border-slate-700/80 font-medium text-[11px] sm:text-xs">
-                        {art.source || 'Media Nasional'}
-                      </span>
-                      <span className="text-slate-400 text-[11px] sm:text-xs">
-                        {formatTimestamp(art.created_at || art.published_at)}
-                      </span>
+                  {/* Article Content */}
+                  <div className="flex-1 space-y-2 w-full flex flex-col justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs font-mono mb-1">
+                        <span className="px-2.5 py-0.5 rounded-md bg-slate-800 text-slate-200 border border-slate-700/80 font-medium text-[11px] sm:text-xs">
+                          {art.source || 'Media Nasional'}
+                        </span>
+                        <span className="text-slate-400 text-[11px] sm:text-xs">
+                          {formatTimestamp(art.created_at || art.published_at)}
+                        </span>
+                      </div>
+
+                      <h4 className="font-editorial text-base sm:text-lg font-bold text-slate-100 group-hover:text-amber-400 transition-colors leading-snug">
+                        <a
+                          href={art.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:underline flex items-start gap-1.5"
+                        >
+                          <span>{art.title}</span>
+                          <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-amber-400 shrink-0 mt-0.5" />
+                        </a>
+                      </h4>
                     </div>
 
-                    <h4 className="font-editorial text-base sm:text-lg font-bold text-slate-100 group-hover:text-amber-400 transition-colors leading-snug">
-                      <a
-                        href={art.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:underline flex items-start gap-1.5"
+                    <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-sans line-clamp-2">
+                      {art.summary}
+                    </p>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-850">
+                      {/* Watchlist Toggle Button */}
+                      <button
+                        onClick={() => handleToggleArticleWatchlist(art)}
+                        className={`text-xs font-mono transition flex items-center gap-1.5 min-h-[36px] px-2.5 py-1 rounded-lg border ${
+                          bookmarked
+                            ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 font-semibold'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                        }`}
+                        title={bookmarked ? 'Hapus dari Watchlist' : 'Simpan ke Watchlist'}
                       >
-                        <span>{art.title}</span>
-                        <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-amber-400 shrink-0 mt-0.5" />
-                      </a>
-                    </h4>
-                  </div>
+                        {bookmarked ? (
+                          <>
+                            <BookmarkCheck className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Tersimpan</span>
+                          </>
+                        ) : (
+                          <>
+                            <Bookmark className="w-3.5 h-3.5" />
+                            <span>Watchlist</span>
+                          </>
+                        )}
+                      </button>
 
-                  <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-sans line-clamp-2">
-                    {art.summary}
-                  </p>
-
-                  <div className="flex justify-end pt-1">
-                    <button
-                      onClick={() => onSelectForComparison([art.url])}
-                      className="text-xs font-mono font-bold text-amber-400 hover:text-amber-300 transition flex items-center gap-1.5 min-h-[40px] touch-manipulation"
-                    >
-                      <Scale className="w-3.5 h-3.5" />
-                      <span>+ Masukkan ke Spektrum Bias</span>
-                    </button>
+                      {/* Bias Spectrum Compare */}
+                      <button
+                        onClick={() => onSelectForComparison([art.url])}
+                        className="text-xs font-mono font-bold text-amber-400 hover:text-amber-300 transition flex items-center gap-1.5 min-h-[36px] touch-manipulation"
+                      >
+                        <Scale className="w-3.5 h-3.5" />
+                        <span>+ Spektrum Bias</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              )
+            })}
           </div>
         )}
       </section>

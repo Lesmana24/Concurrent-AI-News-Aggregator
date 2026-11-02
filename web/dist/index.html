@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>The Dispatch • Newsroom Intelligence & Multi-Perspective Radar</title>
     <meta name="description" content="Platform agregasi berita otonom, deteksi tren isu hotness multi-redaksi, analisis spektrum bias media, dan bot Telegram interaktif harian @PengumpulBeritaBot." />
-    <meta name="keywords" content="news aggregator, media bias, topic clustering, telegram bot, berita indonesia, hotness radar" />
+    <meta name="keywords" content="news aggregator, media bias, topic clustering, telegram bot, berita indonesia, hotness radar, newsroom intelligence" />
     <meta name="author" content="The Dispatch Team" />
     <meta name="theme-color" content="#020617" />
     
@@ -39,8 +39,53 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- Fraunces (Editorial Display), Plus Jakarta Sans (UI Body), JetBrains Mono (Telemetry) -->
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="/assets/index-Bw5r1bMV.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DbCRYeQ-.css">
+
+    <!-- Structured Data (JSON-LD) for Search Engine Optimization -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "NewsMediaOrganization",
+          "@id": "https://thedispatch.id/#organization",
+          "name": "The Dispatch",
+          "url": "https://thedispatch.id",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://thedispatch.id/logo.jpg",
+            "width": 512,
+            "height": 512
+          },
+          "sameAs": [
+            "https://t.me/PengumpulBeritaBot"
+          ],
+          "description": "Autonomous newsroom intelligence, multi-perspective media radar, and topic clustering engine."
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://thedispatch.id/#website",
+          "url": "https://thedispatch.id",
+          "name": "The Dispatch Newsroom Intelligence",
+          "publisher": {
+            "@id": "https://thedispatch.id/#organization"
+          },
+          "inLanguage": "id-ID"
+        },
+        {
+          "@type": "Dataset",
+          "@id": "https://thedispatch.id/#dataset",
+          "name": "The Dispatch National News Clusters & Media Bias Radar",
+          "description": "Real-time aggregated topic clusters and media bias spectrum from Indonesian national news outlets.",
+          "license": "https://creativecommons.org/licenses/by/4.0/",
+          "creator": {
+            "@id": "https://thedispatch.id/#organization"
+          }
+        }
+      ]
+    }
+    </script>
+    <script type="module" crossorigin src="/assets/index-iEQqq2o8.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BRRCNm26.css">
   </head>
   <body class="bg-slate-950 text-slate-100 font-sans antialiased selection:bg-amber-500/30 selection:text-amber-300">
     <div id="root"></div>

@@ -1,18 +1,45 @@
 import React, { useState, useEffect } from 'react'
-import { Flame, RefreshCw, Layers, ExternalLink, ArrowRight, X, AlertCircle, Image as ImageIcon, Sparkles, Scale, Clock } from 'lucide-react'
+import {
+  Flame,
+  RefreshCw,
+  Layers,
+  ExternalLink,
+  ArrowRight,
+  X,
+  AlertCircle,
+  Image as ImageIcon,
+  Sparkles,
+  Scale,
+  Clock,
+  Download,
+  Bookmark,
+  BookmarkCheck,
+} from 'lucide-react'
 import type { TrendingClusterItem, ClusterDetailResponse } from '../types'
 import { api } from '../services/api'
+import type { WatchlistItem } from './WatchlistDrawer'
 
 interface TrendingRadarProps {
   apiKey: string
   onSelectForComparison: (urls: string[]) => void
+  onOpenExport?: () => void
+  onToggleWatchlist?: (item: WatchlistItem) => void
+  isWatched?: (url: string) => boolean
+  onClustersLoaded?: (clusters: TrendingClusterItem[]) => void
 }
 
 // Fallback high-resolution editorial photography for news clusters
 const FALLBACK_NEWS_HERO = 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1000&q=80'
 const FALLBACK_NEWS_SECONDARY = 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=800&q=80'
 
-export const TrendingRadar: React.FC<TrendingRadarProps> = ({ apiKey, onSelectForComparison }) => {
+export const TrendingRadar: React.FC<TrendingRadarProps> = ({
+  apiKey,
+  onSelectForComparison,
+  onOpenExport,
+  onToggleWatchlist,
+  isWatched,
+  onClustersLoaded,
+}) => {
   const [clusters, setClusters] = useState<TrendingClusterItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -26,7 +53,9 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({ apiKey, onSelectFo
     setError(null)
     try {
       const data = await api.getTrending(8)
-      setClusters(data.topics || [])
+      const list = data.topics || []
+      setClusters(list)
+      onClustersLoaded?.(list)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Gagal memuat radar tren')
     } finally {
@@ -64,6 +93,19 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({ apiKey, onSelectFo
     }
   }
 
+  const handleToggleClusterWatchlist = (item: TrendingClusterItem) => {
+    if (!onToggleWatchlist) return
+    onToggleWatchlist({
+      id: `cluster-${item.id}`,
+      title: item.title,
+      url: `cluster://${item.id}`,
+      source: `Kluster #${item.id} (${item.outlets.join(', ')})`,
+      type: 'cluster',
+      summary: item.summary,
+      dateAdded: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+    })
+  }
+
   const formatTimeAgo = (dateStr?: string) => {
     if (!dateStr) return 'Terkini'
     const date = new Date(dateStr)
@@ -95,20 +137,32 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({ apiKey, onSelectFo
         </div>
 
         {/* Action Controls - Full width flex on mobile */}
-        <div className="flex items-center gap-2 sm:gap-2.5 w-full sm:w-auto shrink-0">
+        <div className="flex items-center gap-2 sm:gap-2.5 w-full sm:w-auto shrink-0 flex-wrap">
+          {onOpenExport && (
+            <button
+              onClick={onOpenExport}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-750 border border-slate-700 text-xs font-mono font-medium text-slate-200 transition min-h-[40px] touch-manipulation"
+              title="Ekspor Briefing Kluster"
+            >
+              <Download className="w-3.5 h-3.5 text-amber-400" />
+              <span>Export</span>
+            </button>
+          )}
+
           <button
             onClick={fetchTrending}
             disabled={loading}
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-750 border border-slate-700 text-xs font-mono font-medium text-slate-200 transition min-h-[44px] disabled:opacity-50 touch-manipulation"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-750 border border-slate-700 text-xs font-mono font-medium text-slate-200 transition min-h-[40px] disabled:opacity-50 touch-manipulation"
             title="Muat ulang data"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
+
           <button
             onClick={handleRecompute}
             disabled={recomputing}
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white text-xs font-mono font-bold shadow-md transition min-h-[44px] disabled:opacity-50 touch-manipulation"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white text-xs font-mono font-bold shadow-md transition min-h-[40px] disabled:opacity-50 touch-manipulation"
           >
             <Flame className={`w-4 h-4 ${recomputing ? 'animate-bounce' : ''}`} />
             <span>{recomputing ? 'Menghitung...' : 'Recompute'}</span>
@@ -153,125 +207,110 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({ apiKey, onSelectFo
 
       {/* State 3: Empty State */}
       {!loading && !error && clusters.length === 0 && (
-        <div className="p-8 sm:p-12 text-center rounded-2xl bg-slate-900/40 border border-slate-800 space-y-4 max-w-xl mx-auto">
-          <div className="w-14 h-14 rounded-full bg-slate-800/80 border border-slate-700 flex items-center justify-center mx-auto text-slate-400">
-            <Layers className="w-7 h-7" />
-          </div>
-          <h3 className="font-editorial text-lg sm:text-xl font-bold text-slate-100">Belum Ada Kluster Berita Terdeteksi</h3>
-          <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-sans">
-            Database belum memiliki cukup artikel berita dalam rentang waktu terkini. Jalankan tombol <b>Recompute</b> untuk mengelompokkan artikel.
+        <div className="py-16 px-4 text-center rounded-2xl bg-slate-900/40 border border-slate-800 space-y-4">
+          <Layers className="w-12 h-12 text-slate-500 mx-auto" />
+          <h3 className="font-editorial text-xl font-bold text-slate-200">
+            Belum Ada Kluster Berita Terbentuk
+          </h3>
+          <p className="text-sm text-slate-300 max-w-md mx-auto">
+            Gunakan tombol <b>Recompute</b> di atas atau jalankan sinkronisasi berita dari tab <i>Live Wire</i> untuk membentuk klaster otomatis pertama.
           </p>
-          <button
-            onClick={handleRecompute}
-            className="mt-2 px-5 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-mono font-bold transition inline-flex items-center gap-2 shadow-lg min-h-[44px]"
-          >
-            <Flame className="w-4 h-4" />
-            <span>Picu Hitung Kluster Sekarang</span>
-          </button>
         </div>
       )}
 
-      {/* State 4: Active Cluster Grid with Rich Visual Cards */}
+      {/* State 4: Clusters Grid Cards */}
       {!loading && !error && clusters.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-7">
           {clusters.map((item, idx) => {
-            const primaryImg = item.image_url || FALLBACK_NEWS_HERO
-            const secondaryImg = item.secondary_image_url || null
-
+            const isSaved = isWatched ? isWatched(`cluster://${item.id}`) : false
             return (
               <article
                 key={item.id}
-                className="group rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800/90 hover:border-amber-500/40 transition-all duration-300 shadow-xl overflow-hidden flex flex-col justify-between"
+                className="group rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-amber-500/50 transition-all duration-200 overflow-hidden shadow-xl hover:shadow-2xl flex flex-col justify-between"
               >
                 <div>
-                  {/* Visual Header: 16:9 Hero Image Banner with Dual-Image Inset */}
-                  <div className="relative aspect-[16/9] w-full bg-slate-950 overflow-hidden border-b border-slate-800/80">
+                  {/* Visual Header: Editorial Cover Photo with Badges */}
+                  <div className="relative h-44 sm:h-56 w-full bg-slate-950 overflow-hidden">
                     <img
-                      src={primaryImg}
+                      src={item.image_url || FALLBACK_NEWS_HERO}
                       alt={item.title}
                       loading="lazy"
                       onError={(e) => {
                         ;(e.target as HTMLImageElement).src = FALLBACK_NEWS_HERO
                       }}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 brightness-95 group-hover:brightness-100"
                     />
 
-                    {/* Gradient Overlay for Readable Badges */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-black/30 pointer-events-none" />
+                    {/* Dark gradient overlay for text readability */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
 
-                    {/* Top Floating Badges (Mobile Responsive Flex) */}
-                    <div className="absolute top-2.5 sm:top-3 left-2.5 sm:left-3 right-2.5 sm:right-3 flex items-center justify-between gap-1.5">
-                      {/* Hotness Badge */}
-                      <div className="flex items-center gap-1 sm:gap-1.5 bg-amber-500 text-slate-950 px-2.5 sm:px-3 py-1 rounded-lg text-[11px] sm:text-xs font-mono font-bold shadow-lg backdrop-blur-md shrink-0">
-                        <Flame className="w-3.5 h-3.5 fill-slate-950" />
-                        <span>Hotness {item.hotness_score.toFixed(1)}</span>
-                      </div>
-
-                      {/* Rank & Outlet Counter (Responsive for small phones) */}
-                      <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-900/90 border border-slate-700/80 text-slate-200 px-2.5 sm:px-3 py-1 rounded-lg text-[11px] sm:text-xs font-mono backdrop-blur-md shadow-md shrink-0">
-                        <span className="text-amber-400 font-bold">#{idx + 1}</span>
-                        <span className="text-slate-400">•</span>
-                        <span>{item.unique_outlets} Redaksi</span>
-                        <span className="text-slate-400 hidden xs:inline">•</span>
-                        <span className="hidden xs:inline">{item.article_count} Berita</span>
-                      </div>
+                    {/* Hotness Badge & Topic Rank */}
+                    <div className="absolute top-3 left-3 flex items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md border border-white/10 text-amber-400 font-mono text-xs font-bold flex items-center gap-1 shadow-md">
+                        <Flame className="w-3.5 h-3.5 text-amber-500" />
+                        <span>#{idx + 1}</span>
+                      </span>
+                      <span className="px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md border border-white/10 text-slate-200 font-mono text-xs font-semibold shadow-md">
+                        Hotness {item.hotness_score.toFixed(1)}
+                      </span>
                     </div>
 
-                    {/* Secondary Visual: Dual-Angle Thumbnail Inset if 2nd image available */}
-                    {secondaryImg && (
-                      <div
-                        className="absolute bottom-2.5 sm:bottom-3 right-2.5 sm:right-3 group/thumb"
-                        title="Foto Perspektif Redaksi Lain"
+                    {/* Coverage Outlets Badge */}
+                    <div className="absolute top-3 right-3 flex items-center gap-2">
+                      <button
+                        onClick={() => handleToggleClusterWatchlist(item)}
+                        className={`p-1.5 rounded-lg backdrop-blur-md border transition ${
+                          isSaved
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
+                            : 'bg-black/75 text-slate-200 border-white/10 hover:text-amber-400'
+                        }`}
+                        title={isSaved ? 'Hapus dari Watchlist' : 'Simpan Kluster ke Watchlist'}
                       >
-                        <div className="relative w-18 sm:w-24 h-12 sm:h-16 rounded-lg overflow-hidden border-2 border-slate-900 shadow-2xl bg-slate-800">
-                          <img
-                            src={secondaryImg}
-                            alt="Perspektif Media Lain"
-                            onError={(e) => {
-                              ;(e.target as HTMLImageElement).style.display = 'none'
-                            }}
-                            className="w-full h-full object-cover group-hover/thumb:scale-110 transition-transform duration-300"
-                          />
-                          <div className="absolute bottom-0 inset-x-0 bg-slate-950/90 text-[9px] sm:text-[10px] font-mono text-center text-amber-300 py-0.5 border-t border-slate-800">
-                            +1 Foto
-                          </div>
-                        </div>
+                        {isSaved ? <BookmarkCheck className="w-4 h-4" /> : <Bookmark className="w-4 h-4" />}
+                      </button>
+
+                      <span className="px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md border border-white/10 text-slate-300 font-mono text-xs flex items-center gap-1.5 shadow-md">
+                        <Layers className="w-3.5 h-3.5 text-amber-400" />
+                        <span>{item.article_count} Artikel • {item.unique_outlets} Redaksi</span>
+                      </span>
+                    </div>
+
+                    {/* Secondary thumbnail teaser if present */}
+                    {item.secondary_image_url && (
+                      <div className="absolute bottom-3 right-3 hidden sm:block w-16 h-12 rounded-lg overflow-hidden border border-white/20 shadow-lg">
+                        <img
+                          src={item.secondary_image_url}
+                          alt="Sudut pandang alternatif"
+                          onError={(e) => {
+                            ;(e.target as HTMLImageElement).src = FALLBACK_NEWS_SECONDARY
+                          }}
+                          className="w-full h-full object-cover"
+                        />
                       </div>
                     )}
                   </div>
 
-                  {/* Card Content Body */}
-                  <div className="p-4 sm:p-6 space-y-3 sm:space-y-4">
-                    {/* Media Outlets Tags */}
+                  {/* Body Content */}
+                  <div className="p-4 sm:p-6 space-y-3">
+                    {/* Media Outlets Badges */}
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {item.outlets.map((outlet, i) => (
+                      {item.outlets.map((outlet) => (
                         <span
-                          key={i}
-                          className="text-[11px] sm:text-xs font-mono px-2 sm:px-2.5 py-0.5 rounded-md bg-slate-800/80 text-slate-200 border border-slate-700/60 font-medium"
+                          key={outlet}
+                          className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-800/80 text-slate-300 border border-slate-700/80"
                         >
                           {outlet}
                         </span>
                       ))}
                     </div>
 
-                    {/* Editorial Headline */}
-                    <h3
-                      onClick={() => handleInspect(item.id)}
-                      className="font-editorial text-lg sm:text-xl font-bold text-slate-100 group-hover:text-amber-400 transition-colors leading-snug cursor-pointer line-clamp-2"
-                    >
+                    <h3 className="font-editorial text-lg sm:text-xl font-bold text-slate-100 group-hover:text-amber-400 transition-colors leading-snug line-clamp-2">
                       {item.title}
                     </h3>
 
-                    {/* Synthesized Consensus Summary */}
-                    <div className="p-3 sm:p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-1">
-                      <div className="flex items-center gap-1.5 text-xs font-mono font-semibold text-amber-400">
-                        <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                        <span>Konsensus Fakta AI</span>
-                      </div>
-                      <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-sans line-clamp-3">
-                        {item.summary}
-                      </p>
-                    </div>
+                    <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-sans line-clamp-3">
+                      {item.summary}
+                    </p>
                   </div>
                 </div>
 
@@ -285,7 +324,7 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({ apiKey, onSelectFo
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={() => handleInspect(item.id)}
-                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium transition flex items-center gap-1.5 min-h-[44px] touch-manipulation"
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium transition flex items-center gap-1.5 min-h-[40px] touch-manipulation"
                     >
                       <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
                       <span className="hidden xs:inline">Rincian & Foto</span>
@@ -293,7 +332,7 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({ apiKey, onSelectFo
                     </button>
                     <button
                       onClick={() => handleInspect(item.id)}
-                      className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white font-bold transition flex items-center gap-1 shadow-sm min-h-[44px] touch-manipulation"
+                      className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white font-bold transition flex items-center gap-1 shadow-sm min-h-[40px] touch-manipulation"
                     >
                       <span>Telusuri</span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -348,125 +387,118 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({ apiKey, onSelectFo
                 <p>Sedang mengumpulkan artikel dan galeri foto redaksi...</p>
               </div>
             ) : (
-              <div className="overflow-y-auto p-4 sm:p-6 space-y-5 sm:space-y-6 overscroll-contain">
-                {/* 1. Visual Showcase: 1 or 2 Photos */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl overflow-hidden border border-slate-800 bg-slate-950 p-2">
-                  <div className="relative aspect-[16/10] rounded-lg overflow-hidden bg-slate-900">
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-6">
+                {/* Visual Media Gallery: Dual Redaction Photo Showcase */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                  <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-slate-800 h-44 sm:h-48 group">
                     <img
                       src={clusterDetail.image_url || FALLBACK_NEWS_HERO}
                       alt="Foto Redaksi Utama"
                       onError={(e) => {
                         ;(e.target as HTMLImageElement).src = FALLBACK_NEWS_HERO
                       }}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
-                    <div className="absolute bottom-2 left-2 bg-slate-950/85 backdrop-blur-md px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-mono text-slate-300 border border-slate-800">
-                      Foto Sumber Utama
+                    <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/80 backdrop-blur-sm text-[10px] font-mono text-amber-400 border border-white/10">
+                      Foto Redaksi Utama
                     </div>
                   </div>
 
-                  <div className="relative aspect-[16/10] rounded-lg overflow-hidden bg-slate-900">
+                  <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-slate-800 h-44 sm:h-48 group">
                     <img
                       src={clusterDetail.secondary_image_url || FALLBACK_NEWS_SECONDARY}
                       alt="Foto Redaksi Pembanding"
                       onError={(e) => {
                         ;(e.target as HTMLImageElement).src = FALLBACK_NEWS_SECONDARY
                       }}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
-                    <div className="absolute bottom-2 left-2 bg-slate-950/85 backdrop-blur-md px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-mono text-slate-300 border border-slate-800">
-                      Perspektif Visual Terkait
+                    <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/80 backdrop-blur-sm text-[10px] font-mono text-slate-300 border border-white/10">
+                      Foto Redaksi Sudut Pandang Lain
                     </div>
                   </div>
                 </div>
 
-                {/* 2. AI Consensus Narrative */}
-                <div className="p-4 sm:p-5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-amber-400">
-                    <Sparkles className="w-4 h-4 shrink-0" />
-                    <span>KONSENSUS FAKTUAL LINTAS MEDIA</span>
+                {/* AI Executive Summary Block */}
+                <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-mono text-amber-400 font-bold">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Ringkasan Sintesis Otomatis AI</span>
                   </div>
-                  <p className="text-xs sm:text-base text-slate-200 leading-relaxed font-sans">
+                  <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-sans">
                     {clusterDetail.summary}
                   </p>
                 </div>
 
-                {/* 3. Source Articles List with Thumbnails */}
+                {/* Aggregated Articles List */}
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold">
-                      Artikel Sumber ({clusterDetail.articles.length} Sumber)
-                    </h4>
-                    <span className="text-xs font-mono text-slate-400">
-                      {clusterDetail.unique_outlets} Redaksi
+                  <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+                    <span className="font-semibold text-slate-300">
+                      {clusterDetail.articles.length} Liputan Redaksi Terverifikasi
                     </span>
+                    <button
+                      onClick={() => {
+                        const urls = clusterDetail.articles.map((a) => a.url)
+                        setSelectedClusterId(null)
+                        onSelectForComparison(urls)
+                      }}
+                      className="text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1"
+                    >
+                      <Scale className="w-3.5 h-3.5" />
+                      <span>Bandingkan Semua di Spektrum Bias →</span>
+                    </button>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     {clusterDetail.articles.map((art, i) => (
                       <div
                         key={i}
-                        className="p-3.5 sm:p-4 rounded-xl bg-slate-950/60 hover:bg-slate-950 border border-slate-800/90 hover:border-slate-700 transition flex flex-col sm:flex-row gap-3 sm:gap-4"
+                        className="p-3.5 rounded-xl bg-slate-950 border border-slate-800/90 hover:border-slate-700 transition flex flex-col sm:flex-row gap-3 items-start justify-between"
                       >
-                        {/* Article Thumbnail */}
-                        <div className="w-full sm:w-36 h-36 sm:h-24 rounded-lg overflow-hidden bg-slate-900 border border-slate-800 shrink-0">
-                          <img
-                            src={art.image_url || clusterDetail.image_url || FALLBACK_NEWS_HERO}
-                            alt={art.title}
-                            onError={(e) => {
-                              ;(e.target as HTMLImageElement).src = FALLBACK_NEWS_HERO
-                            }}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-
-                        {/* Article Info */}
-                        <div className="flex-1 space-y-1.5 sm:space-y-2 flex flex-col justify-between">
-                          <div>
-                            <div className="flex items-center justify-between gap-2 mb-1">
-                              <span className="text-[11px] sm:text-xs font-mono font-medium px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                                {art.source || 'Media Nasional'}
-                              </span>
-                            </div>
-                            <a
-                              href={art.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="font-editorial text-sm sm:text-base font-bold text-slate-100 hover:text-amber-400 transition leading-snug flex items-start gap-1.5 group"
-                            >
-                              <span>{art.title}</span>
-                              <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-400 shrink-0 mt-0.5" />
+                        <div className="flex-1 space-y-1">
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                            {art.source}
+                          </span>
+                          <h4 className="font-semibold text-xs sm:text-sm text-slate-100 hover:text-amber-400 transition">
+                            <a href={art.url} target="_blank" rel="noopener noreferrer">
+                              {art.title}
                             </a>
-                          </div>
-                          <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-sans line-clamp-2">
+                          </h4>
+                          <p className="text-xs text-slate-400 line-clamp-2">
                             {art.summary}
                           </p>
+                        </div>
+
+                        <div className="flex sm:flex-col gap-2 shrink-0 self-end sm:self-center">
+                          <a
+                            href={art.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
+                            title="Buka Artikel Sumber"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
-
-                {/* 4. Action: Compare Bias & Perspectives (Min 44px Touch Target) */}
-                {clusterDetail.articles.length >= 2 && (
-                  <div className="pt-3 border-t border-slate-800">
-                    <button
-                      onClick={() => {
-                        const urls = clusterDetail.articles.slice(0, 3).map((a) => a.url)
-                        onSelectForComparison(urls)
-                        setSelectedClusterId(null)
-                        setClusterDetail(null)
-                      }}
-                      className="w-full sm:w-auto px-5 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white text-xs sm:text-sm font-mono font-bold transition flex items-center justify-center gap-2 shadow-lg min-h-[48px] touch-manipulation"
-                    >
-                      <Scale className="w-4 h-4 shrink-0" />
-                      <span>Bandingkan di Spektrum Bias Media</span>
-                      <ArrowRight className="w-4 h-4 shrink-0" />
-                    </button>
-                  </div>
-                )}
               </div>
             )}
+
+            {/* Modal Bottom Bar */}
+            <div className="p-3.5 sm:p-4 border-t border-slate-800 bg-slate-900 flex justify-end gap-2.5">
+              <button
+                onClick={() => {
+                  setSelectedClusterId(null)
+                  setClusterDetail(null)
+                }}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono transition"
+              >
+                Tutup
+              </button>
+            </div>
           </div>
         </div>
       )}
