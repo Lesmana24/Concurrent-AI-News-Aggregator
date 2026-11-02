@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"news-aggregator/internal/models"
+	"sort"
 	"strings"
 	"time"
 
@@ -165,7 +166,37 @@ var idStopWords = map[string]struct{}{
 	"atau": {}, "dan": {}, "yang": {}, "yg": {}, "ini": {}, "itu": {}, "dari": {}, "pada": {},
 	"untuk": {}, "utk": {}, "bisa": {}, "ada": {}, "oleh": {}, "para": {}, "hari": {}, "kemarin": {},
 	"besok": {}, "lalu": {}, "info": {}, "informasi": {}, "tolong": {}, "coba": {}, "jelaskan": {},
-	"dong": {}, "saja": {}, "kah": {}, "lah": {}, "pun": {},
+	"dong": {}, "saja": {}, "kah": {}, "lah": {}, "pun": {}, "mendasari": {}, "dasar": {}, "alasan": {},
+	"faktor": {}, "penyebab": {}, "akibat": {}, "soal": {}, "hal": {},
+}
+
+var validAcronyms = map[string]bool{
+	"mk": true, "ma": true, "ri": true, "uu": true, "dpr": true, "kpu": true, "tni": true, "polri": true,
+	"bp": true, "ai": true, "as": true, "eu": true, "ap": true, "pbb": true, "cpo": true, "bbm": true, "spbu": true,
+}
+
+func containsWholeWord(text, word string) bool {
+	lowerText := strings.ToLower(text)
+	lowerWord := strings.ToLower(word)
+	idx := strings.Index(lowerText, lowerWord)
+	for idx != -1 {
+		startOk := (idx == 0) || !isAlphaNum(rune(lowerText[idx-1]))
+		endIdx := idx + len(lowerWord)
+		endOk := (endIdx == len(lowerText)) || !isAlphaNum(rune(lowerText[endIdx]))
+		if startOk && endOk {
+			return true
+		}
+		next := strings.Index(lowerText[idx+1:], lowerWord)
+		if next == -1 {
+			break
+		}
+		idx += 1 + next
+	}
+	return false
+}
+
+func isAlphaNum(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
 }
 
 // SearchArticlesByKeyword searches articles in PostgreSQL using smart keyword matching as a fallback.
@@ -174,7 +205,6 @@ func (r *PostgresRepository) SearchArticlesByKeyword(ctx context.Context, query 
 		limit = 5
 	}
 
-	// Clean punctuation from query
 	cleanQuery := strings.Map(func(r rune) rune {
 		if strings.ContainsRune("?!.,:;()[]\"'{}<>/\\|@#$%^&*~`+=_-", r) {
 			return ' '
@@ -187,22 +217,22 @@ func (r *PostgresRepository) SearchArticlesByKeyword(ctx context.Context, query 
 		return nil, nil
 	}
 
-	// Filter out Indonesian stop words and short particles
 	var meaningfulWords []string
 	for _, w := range rawWords {
-		if _, isStop := idStopWords[w]; !isStop && len(w) >= 3 {
+		if _, isStop := idStopWords[w]; isStop {
+			continue
+		}
+		if len(w) >= 3 || validAcronyms[w] {
 			meaningfulWords = append(meaningfulWords, w)
-			// Add common Indonesian root/stem variants (e.g., demonstrasi / demonstran -> demo)
 			if strings.HasPrefix(w, "demonstra") {
 				meaningfulWords = append(meaningfulWords, "demo")
 			}
 		}
 	}
 
-	// If everything was stripped by stop words, retain words with length >= 3, or original words
 	if len(meaningfulWords) == 0 {
 		for _, w := range rawWords {
-			if len(w) >= 3 {
+			if len(w) >= 3 || validAcronyms[w] {
 				meaningfulWords = append(meaningfulWords, w)
 			}
 		}
@@ -211,55 +241,130 @@ func (r *PostgresRepository) SearchArticlesByKeyword(ctx context.Context, query 
 		meaningfulWords = rawWords
 	}
 
-	var articles []models.Article
-
-	// Strategy 1: Attempt strict AND match across all meaningful words
-	if len(meaningfulWords) > 1 {
-		qAnd := r.db.WithContext(ctx).Model(&models.Article{})
-		for _, w := range meaningfulWords {
-			pattern := "%" + w + "%"
-			qAnd = qAnd.Where("LOWER(title) LIKE ? OR LOWER(summary) LIKE ?", pattern, pattern)
-		}
-		_ = qAnd.Order("id DESC").Limit(limit).Find(&articles).Error
+	// Fetch up to 40 candidate articles matching any keyword
+	var orConditions []string
+	var orArgs []interface{}
+	for _, w := range meaningfulWords {
+		pattern := "%" + w + "%"
+		orConditions = append(orConditions, "LOWER(title) LIKE ? OR LOWER(summary) LIKE ?")
+		orArgs = append(orArgs, pattern, pattern)
 	}
 
-	// Strategy 2: If strict match found nothing or single keyword, search with OR
-	if len(articles) == 0 {
-		var orConditions []string
-		var orArgs []interface{}
-		for _, w := range meaningfulWords {
-			pattern := "%" + w + "%"
-			orConditions = append(orConditions, "LOWER(title) LIKE ? OR LOWER(summary) LIKE ?")
-			orArgs = append(orArgs, pattern, pattern)
-		}
-
-		if len(orConditions) > 0 {
-			clause := strings.Join(orConditions, " OR ")
-			_ = r.db.WithContext(ctx).Model(&models.Article{}).
-				Where(clause, orArgs...).
-				Order("id DESC").
-				Limit(limit).
-				Find(&articles).Error
-		}
+	var candidates []models.Article
+	if len(orConditions) > 0 {
+		clause := strings.Join(orConditions, " OR ")
+		_ = r.db.WithContext(ctx).Model(&models.Article{}).
+			Where(clause, orArgs...).
+			Order("id DESC").
+			Limit(40).
+			Find(&candidates).Error
 	}
 
-	// Strategy 3: If still empty (e.g. generic query), return latest articles
-	if len(articles) == 0 {
+	if len(candidates) == 0 {
 		_ = r.db.WithContext(ctx).Model(&models.Article{}).
 			Order("id DESC").
 			Limit(limit).
-			Find(&articles).Error
+			Find(&candidates).Error
 	}
 
-	results := make([]models.SemanticSearchResult, len(articles))
-	for i, a := range articles {
+	type scoredArticle struct {
+		article models.Article
+		score   int
+	}
+
+	var scored []scoredArticle
+	maxScore := 0
+
+	for _, a := range candidates {
+		score := 0
+		distinctMatches := 0
+
+		for _, w := range meaningfulWords {
+			matchedThisWord := false
+
+			// Title Match (Whole Word preferred)
+			if containsWholeWord(a.Title, w) {
+				score += 10
+				matchedThisWord = true
+			} else if len(w) >= 4 && strings.Contains(strings.ToLower(a.Title), w) {
+				score += 5
+				matchedThisWord = true
+			}
+
+			// Summary Match (Whole Word preferred)
+			if containsWholeWord(a.Summary, w) {
+				score += 4
+				matchedThisWord = true
+			} else if len(w) >= 4 && strings.Contains(strings.ToLower(a.Summary), w) {
+				score += 2
+				matchedThisWord = true
+			}
+
+			if matchedThisWord {
+				distinctMatches++
+			}
+		}
+
+		if distinctMatches > 1 {
+			score += distinctMatches * 6
+		}
+
+		if score > 0 {
+			scored = append(scored, scoredArticle{article: a, score: score})
+			if score > maxScore {
+				maxScore = score
+			}
+		}
+	}
+
+	// Sort by relevance score descending, then by id descending
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		return scored[i].article.ID > scored[j].article.ID
+	})
+
+	// Filter out noise: discard candidates with score < 35% of top score
+	cutoffScore := 3
+	if maxScore >= 10 {
+		cutoffScore = int(float64(maxScore) * 0.35)
+	}
+
+	var finalArticles []models.Article
+	for _, s := range scored {
+		if s.score >= cutoffScore {
+			finalArticles = append(finalArticles, s.article)
+			if len(finalArticles) >= limit {
+				break
+			}
+		}
+	}
+
+	if len(finalArticles) == 0 && len(candidates) > 0 {
+		end := limit
+		if len(candidates) < end {
+			end = len(candidates)
+		}
+		finalArticles = candidates[:end]
+	}
+
+	results := make([]models.SemanticSearchResult, len(finalArticles))
+	for i, a := range finalArticles {
+		sim := 0.75
+		if maxScore > 0 && i < len(scored) && scored[i].article.ID == a.ID {
+			sim = 0.65 + (float64(scored[i].score)/float64(maxScore))*0.30
+			if sim > 0.98 {
+				sim = 0.98
+			}
+		}
 		results[i] = models.SemanticSearchResult{
 			ArticleID:  a.ID,
 			Title:      a.Title,
 			URL:        a.URL,
 			Summary:    a.Summary,
 			Source:     a.Source,
-			Similarity: 0.80,
+			Similarity: sim,
 		}
 	}
 
