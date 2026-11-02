@@ -1,7 +1,53 @@
 import React, { useState } from 'react'
-import { MessageSquare, Search, Send, Sparkles, RefreshCw, ExternalLink } from 'lucide-react'
+import { MessageSquare, Search, Send, Sparkles, RefreshCw, ExternalLink, Newspaper } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
 import type { SemanticSearchResult } from '../types'
 import { api } from '../services/api'
+
+function parseCitationInfo(url: string) {
+  try {
+    const parsed = new URL(url)
+    const host = parsed.hostname.replace('www.', '')
+    let outlet = host
+    let badgeColor = 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+
+    if (host.includes('cnnindonesia')) {
+      outlet = 'CNN Indonesia'
+      badgeColor = 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+    } else if (host.includes('cnbcindonesia')) {
+      outlet = 'CNBC Indonesia'
+      badgeColor = 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30'
+    } else if (host.includes('antaranews')) {
+      outlet = 'Antara News'
+      badgeColor = 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+    } else if (host.includes('republika')) {
+      outlet = 'Republika'
+      badgeColor = 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+    } else if (host.includes('kompas')) {
+      outlet = 'Kompas'
+      badgeColor = 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+    } else if (host.includes('detik')) {
+      outlet = 'Detikcom'
+      badgeColor = 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30'
+    }
+
+    const segments = parsed.pathname.split('/').filter(Boolean)
+    const lastSeg = segments[segments.length - 1] || ''
+    let title = lastSeg
+      .replace(/^[\d-]+/, '')
+      .replace(/-/g, ' ')
+      .trim()
+    if (!title || title.length < 3) {
+      title = parsed.pathname
+    } else {
+      title = title.charAt(0).toUpperCase() + title.slice(1)
+    }
+
+    return { outlet, title, badgeColor }
+  } catch {
+    return { outlet: 'Media Nasional', title: url, badgeColor: 'bg-slate-700/50 text-slate-300 border-slate-600' }
+  }
+}
 
 interface SemanticInquiryProps {
   apiKey: string
@@ -111,29 +157,34 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
               />
 
               {/* Quick Prompt Suggestions */}
-              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                <span className="text-[11px] font-mono text-slate-400 font-medium">Coba tanya:</span>
-                {[
-                  'Apa penyebab inflasi Oktober 2026?',
-                  'Berapa surplus neraca dagang RI?',
-                  'Bagaimana kinerja sektor ekspor dan tambang?',
-                ].map((sample) => (
-                  <button
-                    key={sample}
-                    type="button"
-                    onClick={() => setQuestion(sample)}
-                    className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-amber-500/10 hover:border-amber-500/40 text-slate-300 hover:text-amber-300 border border-slate-700/80 transition min-h-[28px] text-left"
-                  >
-                    "{sample}"
-                  </button>
-                ))}
+              <div className="space-y-2 pt-1">
+                <span className="text-[11px] sm:text-xs font-sans text-slate-400 font-medium flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Contoh pertanyaan siap uji:
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    'Apa penyebab inflasi Oktober 2026?',
+                    'Berapa surplus neraca dagang RI?',
+                    'Bagaimana kinerja sektor ekspor dan tambang?',
+                  ].map((sample) => (
+                    <button
+                      key={sample}
+                      type="button"
+                      onClick={() => setQuestion(sample)}
+                      className="text-xs font-sans px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-amber-500/15 text-slate-300 hover:text-amber-200 border border-slate-800 hover:border-amber-500/40 transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-98 text-left"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                      <span>{sample}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="flex justify-end pt-1">
+              <div className="flex justify-end pt-2">
                 <button
                   type="submit"
                   disabled={streaming || !question.trim()}
-                  className="w-full sm:w-auto px-5 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white text-xs sm:text-sm font-mono font-bold transition disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg min-h-[44px] touch-manipulation"
+                  className="w-full sm:w-auto px-5 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white text-xs sm:text-sm font-mono font-bold transition disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg min-h-[44px] touch-manipulation cursor-pointer"
                 >
                   {streaming ? (
                     <>
@@ -158,36 +209,72 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
 
             {/* Answer Box */}
             {(streamedAnswer || streaming) && (
-              <div className="p-4 sm:p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-3 animate-in fade-in">
-                <div className="flex items-center justify-between text-xs font-mono border-b border-slate-800 pb-2.5">
+              <div className="p-4 sm:p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-4 animate-in fade-in shadow-inner">
+                <div className="flex items-center justify-between text-xs font-mono border-b border-slate-800/80 pb-3">
                   <span className="text-emerald-400 font-bold flex items-center gap-1.5">
                     <Sparkles className="w-4 h-4 text-emerald-400" /> Jawaban Sintesis AI:
                   </span>
                   {provider && (
-                    <span className="text-slate-400 font-medium">Provider: {provider}</span>
+                    <span className="text-slate-400 font-medium px-2 py-0.5 rounded bg-slate-900 border border-slate-800">
+                      Provider: <strong className="text-amber-400 font-bold">{provider}</strong>
+                    </span>
                   )}
                 </div>
 
-                <div className="text-sm sm:text-base text-slate-200 leading-relaxed whitespace-pre-wrap font-sans">
-                  {streamedAnswer}
+                {/* Formatted Markdown Content */}
+                <div className="text-sm sm:text-base text-slate-200 leading-relaxed font-sans space-y-2">
+                  <ReactMarkdown
+                    components={{
+                      strong: ({ children }) => (
+                        <strong className="font-bold text-amber-200 bg-amber-500/15 px-1 py-0.5 rounded border border-amber-500/25">
+                          {children}
+                        </strong>
+                      ),
+                      em: ({ children }) => <em className="italic text-slate-100">{children}</em>,
+                      p: ({ children }) => <p className="leading-relaxed mb-2.5 last:mb-0 text-slate-200">{children}</p>,
+                      ul: ({ children }) => <ul className="list-disc pl-5 my-2 space-y-1.5 text-slate-300">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal pl-5 my-2 space-y-1.5 text-slate-300">{children}</ol>,
+                      li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                    }}
+                  >
+                    {streamedAnswer}
+                  </ReactMarkdown>
                   {streaming && (
-                    <span className="inline-block w-2 h-4 ml-1 bg-amber-400 animate-pulse align-middle" />
+                    <span className="inline-block w-2 h-4 ml-1 bg-amber-400 animate-pulse align-middle rounded-sm shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
                   )}
                 </div>
 
+                {/* Verified Citations Cards */}
                 {citations.length > 0 && (
-                  <div className="pt-2.5 border-t border-slate-800 space-y-1.5">
-                    <span className="text-xs font-mono font-semibold text-slate-400">Sumber Rujukan:</span>
-                    <ul className="text-xs font-mono text-blue-400 space-y-1">
-                      {citations.map((cite, i) => (
-                        <li key={i} className="truncate hover:underline">
-                          <a href={cite} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
-                            <span>{i + 1}. {cite}</span>
-                            <ExternalLink className="w-3 h-3 shrink-0" />
+                  <div className="pt-3 border-t border-slate-800/80 space-y-2">
+                    <span className="text-xs font-mono font-semibold text-slate-400 flex items-center gap-1.5">
+                      <Newspaper className="w-3.5 h-3.5 text-amber-400" /> Sumber Rujukan Terverifikasi:
+                    </span>
+                    <div className="grid grid-cols-1 gap-2 pt-1">
+                      {citations.map((cite, i) => {
+                        const info = parseCitationInfo(cite)
+                        return (
+                          <a
+                            key={i}
+                            href={cite}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-amber-500/40 text-slate-300 hover:text-amber-200 transition group shadow-sm"
+                          >
+                            <span className="text-[11px] font-mono text-slate-500 shrink-0">
+                              #{i + 1}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border uppercase shrink-0 ${info.badgeColor}`}>
+                              {info.outlet}
+                            </span>
+                            <span className="text-xs font-sans text-slate-300 group-hover:text-amber-100 truncate flex-1">
+                              {info.title}
+                            </span>
+                            <ExternalLink className="w-3.5 h-3.5 text-slate-500 group-hover:text-amber-400 shrink-0 ml-1" />
                           </a>
-                        </li>
-                      ))}
-                    </ul>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
