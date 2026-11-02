@@ -159,27 +159,27 @@ export const api = {
 
         let currentEvent = ''
         for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed) {
+          const cleanLine = line.endsWith('\r') ? line.slice(0, -1) : line
+          if (cleanLine === '') {
             currentEvent = ''
             continue
           }
 
-          if (trimmed.startsWith('event:')) {
-            currentEvent = trimmed.slice(6).trim()
-          } else if (trimmed.startsWith('data:')) {
-            const rawData = trimmed.slice(5).trim()
+          if (cleanLine.startsWith('event:')) {
+            currentEvent = cleanLine.slice(6).trim()
+          } else if (cleanLine.startsWith('data:')) {
+            const rawData = cleanLine.slice(5)
             if (currentEvent === 'token') {
               onToken(rawData)
             } else if (currentEvent === 'done') {
               try {
-                const parsed = JSON.parse(rawData)
+                const parsed = JSON.parse(rawData.trim())
                 onDone(parsed)
               } catch {
                 onDone({ answer: '', citations: [], provider: '' })
               }
             } else if (currentEvent === 'error') {
-              throw new Error(rawData)
+              throw new Error(rawData.trim())
             }
           }
         }

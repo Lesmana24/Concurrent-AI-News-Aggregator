@@ -81,6 +81,6 @@ func TestModelResolver_StaticFallbackWhenServerFails(t *testing.T) {
 	resolver := NewModelResolver(time.Minute)
 	// Invalid port to trigger error
 	resolved := resolver.ResolveModel(context.Background(), "http://127.0.0.1:59999/models", "key", "groq", "auto")
-	assert.Equal(t, "qwen/qwen3.8-27b", resolved)
+	assert.Equal(t, "openai/gpt-oss-120b", resolved)
 }
 

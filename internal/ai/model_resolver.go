@@ -147,8 +147,8 @@ func (r *ModelResolver) selectBestModel(providerType string, availableIDs []stri
 		}
 
 		prefixes := []string{
-			"qwen/qwen3.8-27b", "qwen", "llama-3.3", "llama-3.1", "llama3",
-			"openai/gpt-oss-120b", "openai/gpt-oss-20b", "allam", "mixtral",
+			"openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3", "llama-3.1", "llama3",
+			"qwen/qwen3.8-27b", "qwen", "allam", "mixtral",
 		}
 		for _, prefix := range prefixes {
 			for _, id := range cleanIDs {
@@ -226,7 +226,7 @@ func (r *ModelResolver) selectBestModel(providerType string, availableIDs []stri
 func (r *ModelResolver) getStaticFallbackModel(providerType string) string {
 	switch strings.ToLower(providerType) {
 	case "groq":
-		return "qwen/qwen3.8-27b"
+		return "openai/gpt-oss-120b"
 	case "nvidia":
 		return "meta/llama-3.1-8b-instruct"
 	case "gemini":

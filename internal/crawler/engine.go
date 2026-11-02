@@ -217,6 +217,13 @@ func (e *HarvesterEngine) CrawlAll(ctx context.Context) (*CrawlResult, error) {
 			if len(summarized) > 0 {
 				res.Indexed++
 			}
+
+			// Polite throttle between background articles to preserve cloud AI TPM quota
+			select {
+			case <-ctx.Done():
+				return res, ctx.Err()
+			case <-time.After(1500 * time.Millisecond):
+			}
 		}
 	}
 

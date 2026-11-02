@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"news-aggregator/internal/models"
 	"strings"
@@ -223,6 +224,34 @@ func (c *OpenAICompatibleClient) executeChat(ctx context.Context, sysPrompt, use
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusTooManyRequests {
+		respBytes, _ := io.ReadAll(resp.Body)
+		log.Printf("[%s] Rate limit (429) encountered: %s. Retrying with lighter model after 1.5s...", c.providerName, string(respBytes))
+
+		retryModel := activeModel
+		if strings.Contains(activeModel, "120b") {
+			retryModel = "openai/gpt-oss-20b"
+		}
+
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(1500 * time.Millisecond):
+		}
+
+		reqPayload.Model = retryModel
+		if reqBodyRetry, errMarshal := json.Marshal(reqPayload); errMarshal == nil {
+			if reqRetry, errReq := http.NewRequestWithContext(ctx, http.MethodPost, c.chatURL, bytes.NewBuffer(reqBodyRetry)); errReq == nil {
+				reqRetry.Header.Set("Content-Type", "application/json")
+				reqRetry.Header.Set("Authorization", "Bearer "+c.apiKey)
+				if respRetry, errDo := c.httpClient.Do(reqRetry); errDo == nil {
+					resp = respRetry
+					defer resp.Body.Close()
+				}
+			}
+		}
+	}
+
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read %s response: %w", c.providerName, err)
@@ -294,6 +323,35 @@ func (c *OpenAICompatibleClient) executeChatStream(ctx context.Context, sysPromp
 		return fmt.Errorf("%s stream request failed: %w", c.providerName, err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		respBytes, _ := io.ReadAll(resp.Body)
+		log.Printf("[%s] Stream rate limit (429) encountered: %s. Retrying with lighter model after 1.5s...", c.providerName, string(respBytes))
+
+		retryModel := activeModel
+		if strings.Contains(activeModel, "120b") {
+			retryModel = "openai/gpt-oss-20b"
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(1500 * time.Millisecond):
+		}
+
+		reqPayload.Model = retryModel
+		if reqBodyRetry, errMarshal := json.Marshal(reqPayload); errMarshal == nil {
+			if reqRetry, errReq := http.NewRequestWithContext(ctx, http.MethodPost, c.chatURL, bytes.NewBuffer(reqBodyRetry)); errReq == nil {
+				reqRetry.Header.Set("Content-Type", "application/json")
+				reqRetry.Header.Set("Authorization", "Bearer "+c.apiKey)
+				reqRetry.Header.Set("Accept", "text/event-stream")
+				if respRetry, errDo := c.httpClient.Do(reqRetry); errDo == nil {
+					resp = respRetry
+					defer resp.Body.Close()
+				}
+			}
+		}
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		respBytes, _ := io.ReadAll(resp.Body)
