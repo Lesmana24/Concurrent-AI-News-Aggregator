@@ -109,7 +109,27 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
                 required
                 className="w-full bg-slate-950 border border-slate-700/80 focus:border-amber-500 rounded-xl p-3.5 text-base sm:text-sm font-sans text-slate-100 placeholder:text-slate-500 focus:outline-none transition resize-none leading-relaxed"
               />
-              <div className="flex justify-end">
+
+              {/* Quick Prompt Suggestions */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                <span className="text-[11px] font-mono text-slate-400 font-medium">Coba tanya:</span>
+                {[
+                  'Apa penyebab inflasi Oktober 2026?',
+                  'Berapa surplus neraca dagang RI?',
+                  'Bagaimana kinerja sektor ekspor dan tambang?',
+                ].map((sample) => (
+                  <button
+                    key={sample}
+                    type="button"
+                    onClick={() => setQuestion(sample)}
+                    className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-amber-500/10 hover:border-amber-500/40 text-slate-300 hover:text-amber-300 border border-slate-700/80 transition min-h-[28px] text-left"
+                  >
+                    "{sample}"
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex justify-end pt-1">
                 <button
                   type="submit"
                   disabled={streaming || !question.trim()}

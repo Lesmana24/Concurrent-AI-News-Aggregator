@@ -7,7 +7,7 @@ type SummarizeRequest struct {
 
 // NewsQARequest defines the input for the news Q&A endpoint
 type NewsQARequest struct {
-	URLs     []string `json:"urls" binding:"required,min=1,max=5,dive,url"`
+	URLs     []string `json:"urls" binding:"omitempty,max=5,dive,url"`
 	Question string   `json:"question" binding:"required,min=3,max=500"`
 }
 

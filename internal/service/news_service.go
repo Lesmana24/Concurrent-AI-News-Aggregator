@@ -154,15 +154,44 @@ func (s *newsService) SummarizeArticles(ctx context.Context, apiKey string, urls
 	return finalResults, nil
 }
 
+func (s *newsService) buildQAContext(ctx context.Context, question string, urls []string) (string, []string, error) {
+	var validURLs []string
+	var contextBuilder strings.Builder
+
+	if len(urls) > 0 {
+		var err error
+		validURLs, err = FilterURLs(urls, 5)
+		if err != nil {
+			return "", nil, fmt.Errorf("URL validation failed: %w", err)
+		}
+
+		for idx, u := range validURLs {
+			title, content, err := s.getOrFetchArticleContent(ctx, u)
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to retrieve content from [%s]: %w", u, err)
+			}
+			relevantContent := SmartSelectChunks(content, question, 3500)
+			contextBuilder.WriteString(fmt.Sprintf("\n--- ARTIKEL [%d]: %s (URL: %s) ---\n%s\n", idx+1, title, u, relevantContent))
+		}
+	} else {
+		// RAG: Retrieve top 4 relevant articles via Semantic Search (vector embeddings + keyword fallback)
+		results, err := s.SemanticSearch(ctx, question, 4)
+		if err == nil && len(results) > 0 {
+			for idx, res := range results {
+				validURLs = append(validURLs, res.URL)
+				contextBuilder.WriteString(fmt.Sprintf("\n--- ARTIKEL [%d]: %s (Sumber: %s, URL: %s, Relevansi: %.2f) ---\n%s\n",
+					idx+1, res.Title, res.Source, res.URL, res.Similarity, res.Summary))
+			}
+		}
+	}
+
+	return contextBuilder.String(), validURLs, nil
+}
+
 func (s *newsService) AnswerQuestion(ctx context.Context, apiKey string, req models.NewsQARequest) (*models.NewsQAResponse, error) {
 	user, err := s.GetUser(apiKey)
 	if err != nil {
 		return nil, fmt.Errorf("authentication failed: %w", err)
-	}
-
-	validURLs, err := FilterURLs(req.URLs, 5)
-	if err != nil {
-		return nil, fmt.Errorf("URL validation failed: %w", err)
 	}
 
 	// Atomic Quota Deduction Upfront (1 quota per QA question)
@@ -180,20 +209,22 @@ func (s *newsService) AnswerQuestion(ctx context.Context, apiKey string, req mod
 		}
 	}
 
-	var contextBuilder strings.Builder
-	for idx, u := range validURLs {
-		title, content, err := s.getOrFetchArticleContent(ctx, u)
-		if err != nil {
-			refundOnFailure()
-			return nil, fmt.Errorf("failed to retrieve content from [%s]: %w", u, err)
-		}
-
-		// Smart Chunking: Select the most relevant paragraph chunks matching the question
-		relevantContent := SmartSelectChunks(content, req.Question, 3500)
-		contextBuilder.WriteString(fmt.Sprintf("\n--- ARTIKEL [%d]: %s (URL: %s) ---\n%s\n", idx+1, title, u, relevantContent))
+	contextText, validURLs, err := s.buildQAContext(ctx, req.Question, req.URLs)
+	if err != nil {
+		refundOnFailure()
+		return nil, err
 	}
 
-	answer, provider, err := s.aiService.AnswerQuestion(ctx, contextBuilder.String(), req.Question)
+	if strings.TrimSpace(contextText) == "" {
+		return &models.NewsQAResponse{
+			Question: req.Question,
+			Answer:   "Maaf, belum ada arsip berita yang relevan untuk menjawab pertanyaan ini di dalam sistem kami.",
+			Sources:  []string{},
+			Source:   "local-archive",
+		}, nil
+	}
+
+	answer, provider, err := s.aiService.AnswerQuestion(ctx, contextText, req.Question)
 	if err != nil {
 		refundOnFailure()
 		return nil, fmt.Errorf("AI Q&A failed: %w", err)
@@ -213,11 +244,6 @@ func (s *newsService) AnswerQuestionStream(ctx context.Context, apiKey string, r
 		return "", nil, fmt.Errorf("authentication failed: %w", err)
 	}
 
-	validURLs, err := FilterURLs(req.URLs, 5)
-	if err != nil {
-		return "", nil, fmt.Errorf("URL validation failed: %w", err)
-	}
-
 	deducted, err := s.repo.DeductUserQuota(user.ID, 1)
 	if err != nil {
 		return "", nil, fmt.Errorf("database error: %w", err)
@@ -232,19 +258,18 @@ func (s *newsService) AnswerQuestionStream(ctx context.Context, apiKey string, r
 		}
 	}
 
-	var contextBuilder strings.Builder
-	for idx, u := range validURLs {
-		title, content, err := s.getOrFetchArticleContent(ctx, u)
-		if err != nil {
-			refundOnFailure()
-			return "", nil, fmt.Errorf("failed to retrieve content from [%s]: %w", u, err)
-		}
-
-		relevantContent := SmartSelectChunks(content, req.Question, 3500)
-		contextBuilder.WriteString(fmt.Sprintf("\n--- ARTIKEL [%d]: %s (URL: %s) ---\n%s\n", idx+1, title, u, relevantContent))
+	contextText, validURLs, err := s.buildQAContext(ctx, req.Question, req.URLs)
+	if err != nil {
+		refundOnFailure()
+		return "", nil, err
 	}
 
-	provider, err := s.aiService.AnswerQuestionStream(ctx, contextBuilder.String(), req.Question, outChan)
+	if strings.TrimSpace(contextText) == "" {
+		outChan <- "Maaf, belum ada arsip berita yang relevan untuk menjawab pertanyaan ini di dalam sistem kami."
+		return "system", nil, nil
+	}
+
+	provider, err := s.aiService.AnswerQuestionStream(ctx, contextText, req.Question, outChan)
 	if err != nil {
 		refundOnFailure()
 		return "", nil, fmt.Errorf("AI streaming Q&A failed: %w", err)

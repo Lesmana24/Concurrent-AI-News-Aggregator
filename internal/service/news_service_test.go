@@ -358,6 +358,47 @@ func TestAnswerQuestionStream_Success(t *testing.T) {
 	assert.Equal(t, "Streamed answer token.", received)
 }
 
+func TestAnswerQuestionStream_OpenEndedRAG_NoURLs(t *testing.T) {
+	mockRepo := new(MockRepository)
+	mockAI := new(MockAIService)
+	svc := NewNewsService(mockRepo, mockAI)
+
+	user := &models.User{Quota: 5}
+	user.ID = 1
+	mockRepo.On("GetUserByKey", "valid-key").Return(user, nil)
+	mockRepo.On("DeductUserQuota", uint(1), 1).Return(true, nil)
+
+	ragArticle := models.SemanticSearchResult{
+		ArticleID:  12,
+		Title:      "Inflasi RI Oktober Melandai ke 3,23%",
+		URL:        "https://example.com/inflasi-oktober",
+		Summary:    "BPS mencatat inflasi Oktober 2026 sebesar 3,23 persen.",
+		Source:     "CNBC Indonesia",
+		Similarity: 0.92,
+	}
+	mockRepo.On("SearchSimilarArticles", mock.Anything, mock.Anything, 4, 0.20).Return([]models.SemanticSearchResult{ragArticle}, nil)
+	mockAI.On("AnswerQuestionStream", mock.Anything, mock.Anything, "Berapa inflasi?", mock.Anything).Return("Groq", nil)
+
+	req := models.NewsQARequest{
+		URLs:     nil, // No URLs provided, testing open-ended RAG Q&A
+		Question: "Berapa inflasi?",
+	}
+
+	tokenChan := make(chan string, 10)
+	provider, sources, err := svc.AnswerQuestionStream(context.Background(), "valid-key", req, tokenChan)
+	assert.NoError(t, err)
+	assert.Equal(t, "Groq", provider)
+	assert.Len(t, sources, 1)
+	assert.Equal(t, "https://example.com/inflasi-oktober", sources[0])
+
+	var received string
+	close(tokenChan)
+	for tkn := range tokenChan {
+		received += tkn
+	}
+	assert.Equal(t, "Streamed answer token.", received)
+}
+
 func TestSemanticSearch_Success(t *testing.T) {
 	mockRepo := new(MockRepository)
 	mockAI := new(MockAIService)

@@ -206,12 +206,18 @@ func (h *NewsHandler) QAStream(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	c.Header("Transfer-Encoding", "chunked")
 
+	var resultProvider string
+	var resultSources []string
+
 	go func() {
 		defer close(tokenChan)
-		_, _, err := h.service.AnswerQuestionStream(c.Request.Context(), apiKey, req, tokenChan)
+		p, s, err := h.service.AnswerQuestionStream(c.Request.Context(), apiKey, req, tokenChan)
 		if err != nil {
 			errChan <- err
+			return
 		}
+		resultProvider = p
+		resultSources = s
 	}()
 
 	c.Stream(func(w io.Writer) bool {
@@ -221,7 +227,11 @@ func (h *NewsHandler) QAStream(c *gin.Context) {
 			return false
 		case token, ok := <-tokenChan:
 			if !ok {
-				c.SSEvent("done", gin.H{"status": "completed"})
+				c.SSEvent("done", gin.H{
+					"status":    "completed",
+					"provider":  resultProvider,
+					"citations": resultSources,
+				})
 				return false
 			}
 			c.SSEvent("token", token)
