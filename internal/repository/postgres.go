@@ -476,3 +476,98 @@ func (r *PostgresRepository) GetSubscriptionStats() (*SubscriptionStats, error) 
 		TopicCounts:   topicCounts,
 	}, nil
 }
+
+// GetRecentArticles fetches articles published or created within hours, or falls back to latest articles.
+func (r *PostgresRepository) GetRecentArticles(ctx context.Context, hours int) ([]models.Article, error) {
+	if hours <= 0 {
+		hours = 48
+	}
+	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour)
+
+	var articles []models.Article
+	err := r.db.WithContext(ctx).Model(&models.Article{}).
+		Where("created_at >= ? OR published_at >= ?", cutoff, cutoff).
+		Order("id DESC").
+		Limit(100).
+		Find(&articles).Error
+	if err == nil && len(articles) > 0 {
+		return articles, nil
+	}
+
+	// Fallback to latest 50 articles
+	err = r.db.WithContext(ctx).Model(&models.Article{}).
+		Order("id DESC").
+		Limit(50).
+		Find(&articles).Error
+	return articles, err
+}
+
+// GetArticleEmbeddings retrieves vector embeddings for specified article IDs.
+func (r *PostgresRepository) GetArticleEmbeddings(ctx context.Context, articleIDs []uint) (map[uint][]float32, error) {
+	if len(articleIDs) == 0 || !r.hasVector {
+		return make(map[uint][]float32), nil
+	}
+
+	var rows []models.ArticleEmbedding
+	err := r.db.WithContext(ctx).Where("article_id IN ?", articleIDs).Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	res := make(map[uint][]float32, len(rows))
+	for _, row := range rows {
+		res[row.ArticleID] = row.Embedding.Slice()
+	}
+	return res, nil
+}
+
+// SaveClusters safely replaces or updates topic clusters and their article relationships.
+func (r *PostgresRepository) SaveClusters(ctx context.Context, clusters []models.TopicCluster) error {
+	if len(clusters) == 0 {
+		return nil
+	}
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Clean up existing clusters older than 3 days
+		cutoff := time.Now().Add(-72 * time.Hour)
+		_ = tx.Exec("DELETE FROM topic_clusters WHERE created_at < ?", cutoff).Error
+
+		// Insert or update new clusters
+		for i := range clusters {
+			if err := tx.Save(&clusters[i]).Error; err != nil {
+				return err
+			}
+			// Replace association
+			if len(clusters[i].Articles) > 0 {
+				_ = tx.Model(&clusters[i]).Association("Articles").Replace(clusters[i].Articles)
+			}
+		}
+		return nil
+	})
+}
+
+// GetTrendingClusters retrieves the top trending topic clusters ranked by hotness score.
+func (r *PostgresRepository) GetTrendingClusters(ctx context.Context, limit int) ([]models.TopicCluster, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	var clusters []models.TopicCluster
+	err := r.db.WithContext(ctx).
+		Order("hotness_score DESC, id DESC").
+		Limit(limit).
+		Find(&clusters).Error
+	return clusters, err
+}
+
+// GetClusterByID retrieves a single topic cluster with all associated articles.
+func (r *PostgresRepository) GetClusterByID(ctx context.Context, id uint) (*models.TopicCluster, error) {
+	var cluster models.TopicCluster
+	err := r.db.WithContext(ctx).
+		Preload("Articles").
+		Where("id = ?", id).
+		First(&cluster).Error
+	if err != nil {
+		return nil, err
+	}
+	return &cluster, nil
+}

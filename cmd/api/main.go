@@ -12,6 +12,7 @@ import (
 	_ "news-aggregator/docs"
 	"news-aggregator/internal/ai"
 	"news-aggregator/internal/cache"
+	"news-aggregator/internal/clustering"
 	"news-aggregator/internal/crawler"
 	deliveryHttp "news-aggregator/internal/delivery/http"
 	"news-aggregator/internal/middleware"
@@ -64,6 +65,7 @@ func main() {
 		&models.User{},
 		&models.Article{},
 		&models.TelegramSubscription{},
+		&models.TopicCluster{},
 	); err != nil {
 		slog.Error("Database schema migration failed", slog.String("error", err.Error()))
 		os.Exit(1)
@@ -81,9 +83,10 @@ func main() {
 
 	// Initialize AI Service (Groq -> NVIDIA NIM -> Google AI Studio -> Local-Fallback)
 	aiService := ai.NewDefaultAIService()
+	embeddingSvc := ai.NewDefaultEmbeddingService()
 
-	// Initialize Service with L1 Cache
-	svc := service.NewNewsService(repo, aiService).WithCache(redisCache)
+	// Initialize Service with L1 Cache and Embedding
+	svc := service.NewNewsService(repo, aiService).WithCache(redisCache).WithEmbedding(embeddingSvc)
 
 	// Initialize Autonomous News Harvester Engine
 	crawlerEnabled := strings.EqualFold(os.Getenv("CRAWLER_ENABLED"), "true")
@@ -156,16 +159,33 @@ func main() {
 		go briefingEngine.Start(context.Background())
 	}
 
+	// Initialize Topic Clustering & Trending Topics Radar Engine
+	clusterCfg := clustering.DefaultConfig()
+	if th, err := strconv.ParseFloat(os.Getenv("CLUSTER_SIMILARITY_THRESHOLD"), 32); err == nil && th > 0 {
+		clusterCfg.SimilarityThreshold = float32(th)
+	}
+	if win, _ := strconv.Atoi(os.Getenv("CLUSTER_HOURS_WINDOW")); win > 0 {
+		clusterCfg.HoursWindow = win
+	}
+	if interval, _ := strconv.Atoi(os.Getenv("CLUSTER_INTERVAL_MINUTES")); interval > 0 {
+		clusterCfg.RecomputeIntervalMinutes = interval
+	}
+
+	clusterEngine := clustering.NewClusterEngine(clusterCfg, repo, aiService, embeddingSvc)
+	go clusterEngine.Start(context.Background())
+
 	if telegramBot != nil && telegramBot.IsEnabled() {
 		telegramBot.WithScheduler(briefingEngine)
+		telegramBot.WithClustering(clusterEngine)
 		go telegramBot.Start(context.Background())
 	}
 
-	// Initialize Handler with DB, Redis, Crawler, Scheduler, and Repo references
+	// Initialize Handler with DB, Redis, Crawler, Scheduler, Clustering, and Repo references
 	handler := deliveryHttp.NewNewsHandler(svc, db).
 		WithCache(redisCache).
 		WithCrawler(harvester).
 		WithScheduler(briefingEngine).
+		WithClustering(clusterEngine).
 		WithRepository(repo)
 
 	// Gin Engine with Structured Logging & Request-ID Middleware
@@ -185,6 +205,8 @@ func main() {
 	{
 		api.GET("/health", handler.Health)
 		api.GET("/news/search", handler.SemanticSearch)
+		api.GET("/news/trending", handler.GetTrending)
+		api.GET("/news/clusters/:id", handler.GetClusterDetail)
 		api.GET("/crawler/status", handler.GetCrawlerStatus)
 
 		// Protected routes
@@ -200,6 +222,7 @@ func main() {
 			protected.POST("/news/qa/global", handler.GlobalQA)
 			protected.POST("/news/compare", handler.Compare)
 			protected.POST("/compare", handler.Compare)
+			protected.POST("/news/clusters/recompute", handler.RecomputeClusters)
 			protected.POST("/crawler/trigger", handler.TriggerCrawler)
 			protected.POST("/notifications/broadcast", handler.TriggerBroadcast)
 			protected.GET("/notifications/subscriptions", handler.GetSubscriptions)

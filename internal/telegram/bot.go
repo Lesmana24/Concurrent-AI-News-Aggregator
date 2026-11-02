@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"news-aggregator/internal/clustering"
 	"news-aggregator/internal/crawler"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/repository"
 	"news-aggregator/internal/scheduler"
 	"news-aggregator/internal/service"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +28,7 @@ type BotService struct {
 	repo         *repository.PostgresRepository
 	crawler      *crawler.HarvesterEngine
 	scheduler    *scheduler.BriefingEngine
+	clustering   *clustering.ClusterEngine
 	systemAPIKey string
 	enabled      bool
 }
@@ -72,6 +75,8 @@ func (b *BotService) registerBotCommands() {
 	commands := []tgbotapi.BotCommand{
 		{Command: "start", Description: "Mulai bot & panduan fitur"},
 		{Command: "help", Description: "Bantuan & daftar perintah"},
+		{Command: "trending", Description: "Topik berita paling hangat hari ini (Radar Isu)"},
+		{Command: "cluster", Description: "Rincian kumpulan artikel dalam satu isu"},
 		{Command: "sync", Description: "Sinkronisasi berita terbaru dari RSS feeds"},
 		{Command: "search", Description: "Cari berita arsip (pgvector / kata kunci)"},
 		{Command: "briefing", Description: "Rangkuman berita harian (Executive Digest)"},
@@ -98,6 +103,12 @@ func (b *BotService) WithCrawler(c *crawler.HarvesterEngine) *BotService {
 // WithScheduler injects the BriefingEngine reference for scheduled broadcasts and on-demand briefings.
 func (b *BotService) WithScheduler(s *scheduler.BriefingEngine) *BotService {
 	b.scheduler = s
+	return b
+}
+
+// WithClustering injects the ClusterEngine reference for trending news detection.
+func (b *BotService) WithClustering(c *clustering.ClusterEngine) *BotService {
+	b.clustering = c
 	return b
 }
 
@@ -196,6 +207,8 @@ Saya adalah asisten AI berita cerdas berbasis <b>Concurrent AI News Aggregator</
 ✨ <b>Fitur yang dapat Anda gunakan langsung:</b>
 • 💬 <b>Tanya Bebas:</b> Ketik pertanyaan seputar berita apa saja (contoh: <i>"Apa saja persiapan pengamanan demo di Jakarta?"</i>)
 • 📰 <b>Ringkas Link Berita:</b> Tempelkan langsung tautan artikel berita apa saja
+• 🔥 <b>/trending:</b> Radar isu & topik berita paling hangat hari ini
+• 📌 <b>/cluster &lt;id&gt;:</b> Baca rincian kumpulan artikel dalam satu kluster isu
 • 🔄 <b>/sync:</b> Sinkronisasi dan arsipkan berita terkini otomatis dari Antara, CNN, CNBC, dll.
 • 🔍 <b>/search &lt;topik&gt;:</b> Cari arsip berita berbasis kesamaan makna semantik (pgvector)
 • ⚖️ <b>/compare &lt;url1&gt; &lt;url2&gt;:</b> Analisis perbandingan sudut pandang & sentimen media
@@ -207,6 +220,12 @@ Saya adalah asisten AI berita cerdas berbasis <b>Concurrent AI News Aggregator</
 			html.EscapeString(b.bot.Self.UserName),
 		)
 		b.sendMessage(chatID, reply)
+
+	case "trending":
+		b.handleTrending(ctx, chatID)
+
+	case "cluster":
+		b.handleCluster(ctx, chatID, args)
 
 	case "sync", "crawl":
 		if b.crawler == nil {
@@ -466,6 +485,108 @@ func (b *BotService) handleBriefing(ctx context.Context, chatID int64, topic str
 		html.EscapeString(b.bot.Self.UserName),
 	)
 	b.sendMessage(chatID, reply)
+}
+
+func (b *BotService) handleTrending(ctx context.Context, chatID int64) {
+	if b.clustering == nil {
+		b.sendMessage(chatID, "⚠️ <b>Fitur Topic Clustering & Trending Radar belum diaktifkan.</b>")
+		return
+	}
+
+	b.sendChatAction(chatID, tgbotapi.ChatTyping)
+
+	items, err := b.clustering.GetTrending(ctx, 5)
+	if err != nil {
+		b.sendMessage(chatID, fmt.Sprintf("❌ <b>Gagal mengambil radar tren:</b> %s", html.EscapeString(err.Error())))
+		return
+	}
+
+	if len(items) == 0 {
+		b.sendMessage(chatID, "ℹ️ <b>Belum ada kluster topik tren saat ini.</b>\nSilakan jalankan perintah <code>/sync</code> untuk mengumpulkan berita terbaru terlebih dahulu.")
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString("🔥 <b>Radar Topik Berita Paling Tren Saat Ini</b>\n")
+	sb.WriteString("<i>Dianalisis secara objektif dari liputan lintas media massa</i>\n\n")
+
+	for i, item := range items {
+		outletsStr := strings.Join(item.Outlets, ", ")
+		if outletsStr == "" {
+			outletsStr = "Media Terkemuka"
+		}
+
+		shortSummary := item.Summary
+		if len([]rune(shortSummary)) > 120 {
+			shortSummary = string([]rune(shortSummary)[:117]) + "..."
+		}
+
+		sb.WriteString(fmt.Sprintf("<b>%d. %s</b>\n", i+1, html.EscapeString(item.Title)))
+		sb.WriteString(fmt.Sprintf("   📊 <b>Liputan:</b> %d artikel dari %d media (<i>%s</i>)\n", item.ArticleCount, item.UniqueOutlets, html.EscapeString(outletsStr)))
+		sb.WriteString(fmt.Sprintf("   🔥 <b>Skor Tren:</b> <code>%.1f</code>\n", item.HotnessScore))
+		if shortSummary != "" {
+			sb.WriteString(fmt.Sprintf("   💡 <i>\"%s\"</i>\n", html.EscapeString(shortSummary)))
+		}
+		sb.WriteString(fmt.Sprintf("   👉 Baca detail kluster: <code>/cluster %d</code>\n\n", item.ID))
+	}
+
+	sb.WriteString("💡 <i>Ketik <code>/cluster &lt;id&gt;</code> untuk melihat seluruh sumber artikel dan analisis konsensus isu terkait.</i>")
+
+	b.sendMessage(chatID, sb.String())
+}
+
+func (b *BotService) handleCluster(ctx context.Context, chatID int64, args string) {
+	if b.clustering == nil {
+		b.sendMessage(chatID, "⚠️ <b>Fitur Topic Clustering & Trending Radar belum diaktifkan.</b>")
+		return
+	}
+
+	args = strings.TrimSpace(args)
+	if args == "" {
+		b.sendMessage(chatID, "ℹ️ <b>Mohon sertakan ID kluster topik.</b>\nContoh: <code>/cluster 1</code>\n\nKetik <code>/trending</code> untuk melihat daftar topik yang sedang tren saat ini.")
+		return
+	}
+
+	id, err := strconv.ParseUint(args, 10, 64)
+	if err != nil {
+		b.sendMessage(chatID, "❌ <b>ID kluster harus berupa angka bulat positif.</b>\nContoh: <code>/cluster 1</code>")
+		return
+	}
+
+	b.sendChatAction(chatID, tgbotapi.ChatTyping)
+
+	detail, err := b.clustering.GetClusterDetail(ctx, uint(id))
+	if err != nil || detail == nil {
+		b.sendMessage(chatID, fmt.Sprintf("❌ <b>Kluster dengan ID #%d tidak ditemukan atau sudah kedaluwarsa.</b>\nKetik <code>/trending</code> untuk melihat topik yang sedang aktif.", id))
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("📌 <b>Kluster Isu Berita #%d</b>\n\n", detail.ID))
+	sb.WriteString(fmt.Sprintf("<b>%s</b>\n\n", html.EscapeString(detail.Title)))
+	sb.WriteString(fmt.Sprintf("📊 <b>Cakupan Liputan:</b> %d artikel dari %d media\n", detail.ArticleCount, detail.UniqueOutlets))
+	sb.WriteString(fmt.Sprintf("📰 <b>Media Meliput:</b> %s\n", html.EscapeString(strings.Join(detail.Outlets, ", "))))
+	sb.WriteString(fmt.Sprintf("🔥 <b>Skor Tren:</b> <code>%.1f</code> | 🕒 <b>Terakhir:</b> %s\n\n", detail.HotnessScore, detail.LastUpdated.Format("02 Jan 2006 15:04")))
+
+	if detail.Summary != "" {
+		sb.WriteString("💡 <b>Konsensus & Intisari Isu:</b>\n")
+		sb.WriteString(fmt.Sprintf("<i>%s</i>\n\n", html.EscapeString(detail.Summary)))
+	}
+
+	sb.WriteString("📚 <b>Daftar Artikel Terkait:</b>\n")
+	for i, art := range detail.Articles {
+		src := art.Source
+		if src == "" {
+			src = "Sumber Berita"
+		}
+		sb.WriteString(fmt.Sprintf("%d. <a href=\"%s\">%s</a> (<i>%s</i>)\n", i+1, art.URL, html.EscapeString(art.Title), html.EscapeString(src)))
+	}
+
+	if len(detail.Articles) >= 2 {
+		sb.WriteString(fmt.Sprintf("\n⚖️ <b>Bandingkan Sudut Pandang Media:</b>\n<code>/compare %s %s</code>", detail.Articles[0].URL, detail.Articles[1].URL))
+	}
+
+	b.sendMessage(chatID, sb.String())
 }
 
 func (b *BotService) sendMessage(chatID int64, text string) {

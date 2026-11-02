@@ -127,6 +127,124 @@
                 }
             }
         },
+        "/api/v1/news/clusters/recompute": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Manually recalculates topic clusters and trending scores across recent articles.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Trending"
+                ],
+                "summary": "Trigger on-demand clustering calculation",
+                "responses": {
+                    "200": {
+                        "description": "Clustering execution summary",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "API Key missing or invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Clustering is already in progress",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Clustering error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Clustering engine is not configured",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/news/clusters/{id}": {
+            "get": {
+                "description": "Returns detailed consensus and all articles from various outlets in this topic cluster.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Trending"
+                ],
+                "summary": "Get cluster details and all included articles",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Cluster ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Cluster detail and articles",
+                        "schema": {
+                            "$ref": "#/definitions/models.ClusterDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid cluster ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Cluster not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Database error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/news/compare": {
             "post": {
                 "security": [
@@ -323,6 +441,52 @@
                     },
                     "500": {
                         "description": "Internal search error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/news/trending": {
+            "get": {
+                "description": "Returns top ranked trending news topics clustered across multiple independent outlets.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Trending"
+                ],
+                "summary": "Get trending news topics and story clusters",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Max topics to return (default 5, max 20)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of trending topics",
+                        "schema": {
+                            "$ref": "#/definitions/models.TrendingClusterResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Clustering error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Clustering engine is not configured",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -834,6 +998,44 @@
                 }
             }
         },
+        "models.ClusterDetailResponse": {
+            "type": "object",
+            "properties": {
+                "article_count": {
+                    "type": "integer"
+                },
+                "articles": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ArticleResponse"
+                    }
+                },
+                "hotness_score": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_updated": {
+                    "type": "string"
+                },
+                "outlets": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "unique_outlets": {
+                    "type": "integer"
+                }
+            }
+        },
         "models.GlobalQARequest": {
             "type": "object",
             "required": [
@@ -1021,6 +1223,55 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "models.TrendingClusterItem": {
+            "type": "object",
+            "properties": {
+                "article_count": {
+                    "type": "integer"
+                },
+                "hotness_score": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_updated": {
+                    "type": "string"
+                },
+                "outlets": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "unique_outlets": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.TrendingClusterResponse": {
+            "type": "object",
+            "properties": {
+                "computed_at": {
+                    "type": "string"
+                },
+                "topics": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.TrendingClusterItem"
+                    }
+                },
+                "total_clusters": {
+                    "type": "integer"
                 }
             }
         },

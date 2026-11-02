@@ -49,6 +49,31 @@ definitions:
       url:
         type: string
     type: object
+  models.ClusterDetailResponse:
+    properties:
+      article_count:
+        type: integer
+      articles:
+        items:
+          $ref: '#/definitions/models.ArticleResponse'
+        type: array
+      hotness_score:
+        type: number
+      id:
+        type: integer
+      last_updated:
+        type: string
+      outlets:
+        items:
+          type: string
+        type: array
+      summary:
+        type: string
+      title:
+        type: string
+      unique_outlets:
+        type: integer
+    type: object
   models.GlobalQARequest:
     properties:
       question:
@@ -177,6 +202,38 @@ definitions:
     required:
     - urls
     type: object
+  models.TrendingClusterItem:
+    properties:
+      article_count:
+        type: integer
+      hotness_score:
+        type: number
+      id:
+        type: integer
+      last_updated:
+        type: string
+      outlets:
+        items:
+          type: string
+        type: array
+      summary:
+        type: string
+      title:
+        type: string
+      unique_outlets:
+        type: integer
+    type: object
+  models.TrendingClusterResponse:
+    properties:
+      computed_at:
+        type: string
+      topics:
+        items:
+          $ref: '#/definitions/models.TrendingClusterItem'
+        type: array
+      total_clusters:
+        type: integer
+    type: object
   scheduler.BroadcastRequest:
     properties:
       message:
@@ -296,6 +353,85 @@ paths:
       summary: Health and system readiness check
       tags:
       - System
+  /api/v1/news/clusters/{id}:
+    get:
+      description: Returns detailed consensus and all articles from various outlets
+        in this topic cluster.
+      parameters:
+      - description: Cluster ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Cluster detail and articles
+          schema:
+            $ref: '#/definitions/models.ClusterDetailResponse'
+        "400":
+          description: Invalid cluster ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Cluster not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Database error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get cluster details and all included articles
+      tags:
+      - Trending
+  /api/v1/news/clusters/recompute:
+    post:
+      description: Manually recalculates topic clusters and trending scores across
+        recent articles.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Clustering execution summary
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: API Key missing or invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Clustering is already in progress
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Clustering error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Clustering engine is not configured
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Trigger on-demand clustering calculation
+      tags:
+      - Trending
   /api/v1/news/compare:
     post:
       consumes:
@@ -432,6 +568,37 @@ paths:
       summary: Semantic vector search across archived news articles
       tags:
       - News
+  /api/v1/news/trending:
+    get:
+      description: Returns top ranked trending news topics clustered across multiple
+        independent outlets.
+      parameters:
+      - description: Max topics to return (default 5, max 20)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of trending topics
+          schema:
+            $ref: '#/definitions/models.TrendingClusterResponse'
+        "500":
+          description: Clustering error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Clustering engine is not configured
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get trending news topics and story clusters
+      tags:
+      - Trending
   /api/v1/notifications/broadcast:
     post:
       consumes:

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"news-aggregator/internal/cache"
+	"news-aggregator/internal/clustering"
 	"news-aggregator/internal/crawler"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/repository"
@@ -25,6 +26,7 @@ type NewsHandler struct {
 	cacheSvc        cache.CacheService
 	crawlerEngine   *crawler.HarvesterEngine
 	schedulerEngine *scheduler.BriefingEngine
+	clusterEngine   *clustering.ClusterEngine
 }
 
 func NewNewsHandler(s service.NewsService, dbs ...*gorm.DB) *NewsHandler {
@@ -52,6 +54,11 @@ func (h *NewsHandler) WithRepository(r *repository.PostgresRepository) *NewsHand
 
 func (h *NewsHandler) WithScheduler(s *scheduler.BriefingEngine) *NewsHandler {
 	h.schedulerEngine = s
+	return h
+}
+
+func (h *NewsHandler) WithClustering(c *clustering.ClusterEngine) *NewsHandler {
+	h.clusterEngine = c
 	return h
 }
 
@@ -456,5 +463,104 @@ func (h *NewsHandler) GetSubscriptions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"subscriptions": stats,
 		"scheduler":     schedulerStats,
+	})
+}
+
+// GetTrending godoc
+// @Summary      Get trending news topics and story clusters
+// @Description  Returns top ranked trending news topics clustered across multiple independent outlets.
+// @Tags         Trending
+// @Produce      json
+// @Param        limit query int false "Max topics to return (default 5, max 20)"
+// @Success      200 {object} models.TrendingClusterResponse "List of trending topics"
+// @Failure      500 {object} map[string]string "Clustering error"
+// @Failure      503 {object} map[string]string "Clustering engine is not configured"
+// @Router       /api/v1/news/trending [get]
+func (h *NewsHandler) GetTrending(c *gin.Context) {
+	if h.clusterEngine == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Clustering engine is not configured"})
+		return
+	}
+
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "5"))
+	items, err := h.clusterEngine.GetTrending(c.Request.Context(), limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.TrendingClusterResponse{
+		TotalClusters: len(items),
+		ComputedAt:    time.Now(),
+		Topics:        items,
+	})
+}
+
+// GetClusterDetail godoc
+// @Summary      Get cluster details and all included articles
+// @Description  Returns detailed consensus and all articles from various outlets in this topic cluster.
+// @Tags         Trending
+// @Produce      json
+// @Param        id path int true "Cluster ID"
+// @Success      200 {object} models.ClusterDetailResponse "Cluster detail and articles"
+// @Failure      400 {object} map[string]string "Invalid cluster ID"
+// @Failure      404 {object} map[string]string "Cluster not found"
+// @Failure      500 {object} map[string]string "Database error"
+// @Router       /api/v1/news/clusters/{id} [get]
+func (h *NewsHandler) GetClusterDetail(c *gin.Context) {
+	if h.clusterEngine == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Clustering engine is not configured"})
+		return
+	}
+
+	idParam, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cluster ID"})
+		return
+	}
+
+	detail, err := h.clusterEngine.GetClusterDetail(c.Request.Context(), uint(idParam))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Cluster not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, detail)
+}
+
+// RecomputeClusters godoc
+// @Summary      Trigger on-demand clustering calculation
+// @Description  Manually recalculates topic clusters and trending scores across recent articles.
+// @Tags         Trending
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Success      200 {object} map[string]interface{} "Clustering execution summary"
+// @Failure      401 {object} map[string]string "API Key missing or invalid"
+// @Failure      409 {object} map[string]string "Clustering is already in progress"
+// @Failure      500 {object} map[string]string "Clustering error"
+// @Failure      503 {object} map[string]string "Clustering engine is not configured"
+// @Router       /api/v1/news/clusters/recompute [post]
+func (h *NewsHandler) RecomputeClusters(c *gin.Context) {
+	if h.clusterEngine == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Clustering engine is not configured"})
+		return
+	}
+
+	clusters, err := h.clusterEngine.Recompute(c.Request.Context())
+	if err != nil {
+		if strings.Contains(err.Error(), "already in progress") {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	stats := h.clusterEngine.GetStats()
+	c.JSON(http.StatusOK, gin.H{
+		"message":        "Topic clusters successfully recomputed",
+		"total_clusters": len(clusters),
+		"duration_ms":    stats.LastDurationMs,
+		"computed_at":    stats.LastComputedAt,
 	})
 }
