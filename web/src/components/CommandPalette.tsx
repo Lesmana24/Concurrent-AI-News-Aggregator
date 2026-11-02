@@ -13,8 +13,12 @@ import {
   RefreshCw,
   Command,
   ArrowRight,
+  Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react'
 import type { TabType } from './Navigation'
+import type { ThemeMode } from './ThemeToggle'
 
 export interface CommandPaletteProps {
   isOpen: boolean
@@ -24,6 +28,7 @@ export interface CommandPaletteProps {
   onOpenExportModal: () => void
   onOpenWatchlist: () => void
   onTriggerRecompute?: () => void
+  onSelectTheme?: (mode: ThemeMode) => void
 }
 
 interface CommandAction {
@@ -44,6 +49,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onOpenExportModal,
   onOpenWatchlist,
   onTriggerRecompute,
+  onSelectTheme,
 }) => {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -147,6 +153,33 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       shortcut: 'API',
     },
     {
+      id: 'theme-system',
+      title: 'Ganti Tema: Bawaan Sistem / Device',
+      subtitle: 'Otomatis sesuaikan dengan preferensi gelap/terang perangkat Anda',
+      category: 'Aksi Sistem',
+      icon: Monitor,
+      run: () => { onSelectTheme?.('system'); onClose() },
+      shortcut: 'Auto',
+    },
+    {
+      id: 'theme-light',
+      title: 'Ganti Tema: Mode Terang (Light Mode)',
+      subtitle: 'Aktifkan palet putih bersih dengan kontras tinggi',
+      category: 'Aksi Sistem',
+      icon: Sun,
+      run: () => { onSelectTheme?.('light'); onClose() },
+      shortcut: 'Light',
+    },
+    {
+      id: 'theme-dark',
+      title: 'Ganti Tema: Mode Gelap (Dark Mode)',
+      subtitle: 'Aktifkan palet obsidian yang nyaman di mata',
+      category: 'Aksi Sistem',
+      icon: Moon,
+      run: () => { onSelectTheme?.('dark'); onClose() },
+      shortcut: 'Dark',
+    },
+    {
       id: 'act-telegram',
       title: 'Buka Telegram Bot (@PengumpulBeritaBot)',
       subtitle: 'Akses notifikasi berita harian dan tanya jawab di ponsel Anda',
@@ -157,7 +190,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         onClose()
       },
     },
-  ], [onSelectTab, onClose, onTriggerRecompute, onOpenExportModal, onOpenWatchlist, onOpenApiKeyModal])
+  ], [onSelectTab, onClose, onTriggerRecompute, onOpenExportModal, onOpenWatchlist, onOpenApiKeyModal, onSelectTheme])
 
   // Filter actions based on query
   const filteredActions = useMemo(() => {

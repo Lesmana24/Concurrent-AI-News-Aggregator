@@ -40,6 +40,23 @@
     <!-- Fraunces (Editorial Display), Plus Jakarta Sans (UI Body), JetBrains Mono (Telemetry) -->
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
+    <!-- Early Theme Evaluator (Prevents flash of unstyled theme on initial load) -->
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('the_dispatch_theme');
+          var mode = (saved === 'light' || saved === 'dark' || saved === 'system') ? saved : 'system';
+          var isDark = mode === 'dark' || (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch(e) {}
+      })();
+    </script>
+
     <!-- Structured Data (JSON-LD) for Search Engine Optimization -->
     <script type="application/ld+json">
     {
@@ -84,8 +101,8 @@
       ]
     }
     </script>
-    <script type="module" crossorigin src="/assets/index-iEQqq2o8.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-BRRCNm26.css">
+    <script type="module" crossorigin src="/assets/index-D4iEztGN.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-D4aHo6EV.css">
   </head>
   <body class="bg-slate-950 text-slate-100 font-sans antialiased selection:bg-amber-500/30 selection:text-amber-300">
     <div id="root"></div>

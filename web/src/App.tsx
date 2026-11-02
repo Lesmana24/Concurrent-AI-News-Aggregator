@@ -16,6 +16,11 @@ import {
   getStoredWatchlist,
   saveStoredWatchlist,
 } from './components/WatchlistDrawer'
+import {
+  type ThemeMode,
+  getInitialTheme,
+  applyThemeToDOM,
+} from './components/ThemeToggle'
 import type { UserMe, TrendingClusterItem } from './types'
 import { api, DEFAULT_DEMO_KEY } from './services/api'
 
@@ -24,6 +29,7 @@ export const App: React.FC = () => {
   const [apiKey, setApiKey] = useState<string>(() => {
     return localStorage.getItem('the_dispatch_api_key') || DEFAULT_DEMO_KEY
   })
+  const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
   const [user, setUser] = useState<UserMe | null>(null)
   const [isOnline, setIsOnline] = useState(true)
   const [prefillComparisonUrls, setPrefillComparisonUrls] = useState<string[]>([])
@@ -66,6 +72,19 @@ export const App: React.FC = () => {
     const interval = setInterval(checkHealth, 30000)
     return () => clearInterval(interval)
   }, [apiKey])
+
+  // Sync and listen for device theme changes
+  useEffect(() => {
+    applyThemeToDOM(theme)
+    localStorage.setItem('the_dispatch_theme', theme)
+
+    if (theme === 'system' && typeof window !== 'undefined' && window.matchMedia) {
+      const mql = window.matchMedia('(prefers-color-scheme: dark)')
+      const listener = () => applyThemeToDOM('system')
+      mql.addEventListener('change', listener)
+      return () => mql.removeEventListener('change', listener)
+    }
+  }, [theme])
 
   // Global Cmd+K / Ctrl+K keyboard shortcut listener
   useEffect(() => {
@@ -139,6 +158,8 @@ export const App: React.FC = () => {
         apiKey={apiKey}
         isOnline={isOnline}
         watchlistCount={watchlist.length}
+        theme={theme}
+        onThemeChange={setTheme}
         onOpenCommandPalette={() => setIsCmdOpen(true)}
         onOpenApiKeyModal={() => setIsApiKeyOpen(true)}
         onOpenExportModal={() => setIsExportOpen(true)}
@@ -234,6 +255,7 @@ export const App: React.FC = () => {
         onOpenExportModal={() => setIsExportOpen(true)}
         onOpenWatchlist={() => setIsWatchlistOpen(true)}
         onTriggerRecompute={handleTriggerRecompute}
+        onSelectTheme={setTheme}
       />
 
       <ApiKeyModal

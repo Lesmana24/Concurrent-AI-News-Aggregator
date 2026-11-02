@@ -7,12 +7,15 @@ import {
   Bookmark,
 } from 'lucide-react'
 import type { UserMe } from '../types'
+import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 
 interface HeaderProps {
   user: UserMe | null
   apiKey: string
   isOnline: boolean
   watchlistCount: number
+  theme: ThemeMode
+  onThemeChange: (theme: ThemeMode) => void
   onOpenCommandPalette: () => void
   onOpenApiKeyModal: () => void
   onOpenExportModal: () => void
@@ -23,6 +26,8 @@ export const Header: React.FC<HeaderProps> = ({
   user,
   isOnline,
   watchlistCount,
+  theme,
+  onThemeChange,
   onOpenCommandPalette,
   onOpenApiKeyModal,
   onOpenExportModal,
@@ -120,6 +125,9 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           )}
         </button>
+
+        {/* Theme Toggle (Device / Light / Dark) */}
+        <ThemeToggle theme={theme} onThemeChange={onThemeChange} />
 
         {/* Health Status Indicator */}
         <div
