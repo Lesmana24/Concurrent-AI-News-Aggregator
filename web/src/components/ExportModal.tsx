@@ -111,85 +111,85 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
       <div
-        className="w-full max-w-2xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden flex flex-col max-h-[90vh]"
+        className="w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] text-slate-900 dark:text-slate-100"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-800 bg-slate-950/70">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/70">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
+            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-500">
               <Download className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-editorial text-lg sm:text-xl font-bold text-slate-100">
+              <h3 className="font-editorial text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100">
                 Executive Intelligence Export Suite
               </h3>
-              <p className="text-xs text-slate-400 font-sans">
+              <p className="text-xs text-slate-600 dark:text-slate-400 font-sans">
                 Kompilasi laporan ringkasan topik dan dump dataset klaster untuk analitik eksternal
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition touch-manipulation"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition touch-manipulation cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-5 sm:p-6 overflow-y-auto space-y-6 text-sm text-slate-300 font-sans">
+        <div className="p-5 sm:p-6 overflow-y-auto space-y-6 text-sm text-slate-700 dark:text-slate-300 font-sans">
           {/* Quick Action Cards Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             {/* Markdown Report Card */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-amber-500/40 transition group flex flex-col justify-between space-y-3">
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-amber-500/40 transition group flex flex-col justify-between space-y-3">
               <div>
                 <div className="flex items-center justify-between">
-                  <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400">
+                  <div className="p-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
                     <FileText className="w-5 h-5" />
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-400 border border-slate-200 dark:border-slate-700 font-medium">
                     Markdown (.md)
                   </span>
                 </div>
-                <h4 className="font-editorial text-base font-bold text-slate-100 mt-2">
+                <h4 className="font-editorial text-base font-bold text-slate-900 dark:text-slate-100 mt-2">
                   Executive Briefing (.md)
                 </h4>
-                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
                   Laporan naratif lengkap dengan ringkasan AI, Hotness score, dan daftar redaksi berita.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={handleDownloadMD}
-                className="w-full py-2 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-semibold text-xs font-mono transition flex items-center justify-center gap-1.5 shadow-sm"
+                className="w-full py-2 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-semibold text-xs font-mono transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
                 <Download className="w-4 h-4" /> Unduh Markdown
               </button>
             </div>
 
             {/* CSV Dataset Card */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-emerald-500/40 transition group flex flex-col justify-between space-y-3">
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 transition group flex flex-col justify-between space-y-3">
               <div>
                 <div className="flex items-center justify-between">
-                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                     <FileSpreadsheet className="w-5 h-5" />
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-400 border border-slate-200 dark:border-slate-700 font-medium">
                     Spreadsheet (.csv)
                   </span>
                 </div>
-                <h4 className="font-editorial text-base font-bold text-slate-100 mt-2">
+                <h4 className="font-editorial text-base font-bold text-slate-900 dark:text-slate-100 mt-2">
                   Cluster Dataset (.csv)
                 </h4>
-                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
                   Data tabular klaster siap impor untuk Excel, Google Sheets, Pandas, atau Tableau.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={handleDownloadCSV}
-                className="w-full py-2 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-semibold text-xs font-mono transition flex items-center justify-center gap-1.5 shadow-sm"
+                className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-semibold text-xs font-mono transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
                 <Download className="w-4 h-4" /> Unduh CSV
               </button>
@@ -201,35 +201,35 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <button
               type="button"
               onClick={handleCopy}
-              className="flex-1 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-750 text-slate-200 border border-slate-700 transition flex items-center justify-center gap-2 text-xs font-mono"
+              className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:bg-slate-300 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition flex items-center justify-center gap-2 text-xs font-mono cursor-pointer"
             >
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              {copied ? <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-4 h-4" />}
               <span>{copied ? 'Tersalin ke Clipboard!' : 'Salin Teks Briefing'}</span>
             </button>
 
             <button
               type="button"
               onClick={handlePrint}
-              className="flex-1 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-750 text-slate-200 border border-slate-700 transition flex items-center justify-center gap-2 text-xs font-mono"
+              className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:bg-slate-300 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition flex items-center justify-center gap-2 text-xs font-mono cursor-pointer"
             >
-              <Printer className="w-4 h-4 text-slate-400" />
+              <Printer className="w-4 h-4 text-slate-500 dark:text-slate-400" />
               <span>Cetak / Simpan PDF</span>
             </button>
           </div>
 
           {/* Preview Snippet */}
           <div className="space-y-2">
-            <span className="text-xs font-mono text-slate-400 flex items-center gap-1.5 font-semibold">
+            <span className="text-xs font-mono text-slate-600 dark:text-slate-400 flex items-center gap-1.5 font-semibold">
               <Layers className="w-4 h-4 text-amber-500" /> Pratinjau Briefing ({clusters.length} Klaster)
             </span>
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 max-h-48 overflow-y-auto font-mono text-xs text-slate-300 space-y-2 leading-relaxed">
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 max-h-48 overflow-y-auto font-mono text-xs text-slate-800 dark:text-slate-300 space-y-2 leading-relaxed">
               {clusters.slice(0, 3).map((c, i) => (
-                <div key={c.id} className="border-b border-slate-800/80 pb-2 last:border-0 last:pb-0">
+                <div key={c.id} className="border-b border-slate-200 dark:border-slate-800/80 pb-2 last:border-0 last:pb-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-amber-400 font-bold">#{i + 1}</span>
-                    <span className="text-slate-200 font-semibold truncate">{c.title}</span>
+                    <span className="text-amber-700 dark:text-amber-400 font-bold">#{i + 1}</span>
+                    <span className="text-slate-900 dark:text-slate-200 font-semibold truncate">{c.title}</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 line-clamp-2 mt-0.5">{c.summary}</p>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-2 mt-0.5">{c.summary}</p>
                 </div>
               ))}
             </div>
@@ -237,10 +237,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-5 sm:px-6 py-3.5 bg-slate-950 border-t border-slate-800 flex items-center justify-end">
+        <div className="px-5 sm:px-6 py-3.5 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono transition"
+            className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-mono transition cursor-pointer"
           >
             Tutup
           </button>

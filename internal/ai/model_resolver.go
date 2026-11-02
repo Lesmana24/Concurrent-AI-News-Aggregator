@@ -147,8 +147,8 @@ func (r *ModelResolver) selectBestModel(providerType string, availableIDs []stri
 		}
 
 		prefixes := []string{
-			"openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3", "llama-3.1", "llama3",
-			"qwen/qwen3.8-27b", "qwen", "allam", "mixtral",
+			"llama-3.3", "llama-3.1", "llama3", "qwen/qwen-2.5", "qwen",
+			"mixtral", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "allam",
 		}
 		for _, prefix := range prefixes {
 			for _, id := range cleanIDs {

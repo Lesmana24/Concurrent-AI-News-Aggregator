@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"news-aggregator/internal/models"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -20,7 +21,8 @@ ATURAN MUTLAK:
 1. Rangkuman HARUS ditulis dalam Bahasa Indonesia yang baku dan formal, terlepas dari bahasa asli artikel tersebut.
 2. Rangkuman HARUS terdiri dari TEPAT 3 kalimat, tidak boleh lebih dan tidak boleh kurang.
 3. Ambil intisari paling penting (Siapa, Apa, Kapan, Di mana, Mengapa).
-4. JANGAN tambahkan kata pengantar (seperti "Berikut adalah rangkumannya...") atau kalimat penutup. Langsung berikan teks rangkumannya saja!`
+4. DILARANG KERAS menyertakan proses berpikir, coretan, atau teks Bahasa Inggris (seperti "We need to produce...", "Key points:", "Sentence 1:").
+5. JANGAN tambahkan kata pengantar (seperti "Berikut adalah rangkumannya...") atau kalimat penutup. Langsung berikan teks rangkumannya saja!`
 
 	qaSystemPrompt = `Anda adalah asisten analisis berita profesional dan faktual.
 Tugas Anda adalah menjawab pertanyaan pengguna HANYA berdasarkan konteks artikel berita yang disediakan di bawah ini.
@@ -148,7 +150,57 @@ type streamChunk struct {
 
 func (c *OpenAICompatibleClient) Summarize(ctx context.Context, text string) (string, error) {
 	userMessage := fmt.Sprintf("Rangkum artikel berikut:\n\n%s", text)
-	return c.executeChat(ctx, systemPrompt, userMessage, defaultMaxTokens)
+	raw, err := c.executeChat(ctx, systemPrompt, userMessage, defaultMaxTokens)
+	if err != nil {
+		return "", err
+	}
+	return cleanSummary(raw), nil
+}
+
+func cleanSummary(raw string) string {
+	raw = regexp.MustCompile(`(?s)<think>.*?</think>`).ReplaceAllString(raw, "")
+	raw = regexp.MustCompile(`(?i)</?(?:intisari|judul|summary|title)>`).ReplaceAllString(raw, "")
+	raw = strings.TrimSpace(raw)
+
+	// If the model vomited sentences prefixed with Sentence 1:, Sentence 2:, etc.
+	if strings.Contains(raw, "Sentence 1:") || strings.Contains(raw, "Kalimat 1:") {
+		var sentences []string
+		parts := regexp.MustCompile(`(?i)(?:Sentence|Kalimat)\s*\d+:\s*`).Split(raw, -1)
+		for _, p := range parts {
+			trimmed := strings.TrimSpace(p)
+			if trimmed != "" && !strings.HasPrefix(strings.ToLower(trimmed), "we need") && !strings.HasPrefix(strings.ToLower(trimmed), "now 3") {
+				sentences = append(sentences, trimmed)
+			}
+		}
+		if len(sentences) > 0 {
+			return strings.Join(sentences, " ")
+		}
+	}
+
+	// Filter out obvious English chain-of-thought lines
+	lines := strings.Split(raw, "\n")
+	var validLines []string
+	for _, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		lLower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lLower, "we need to") ||
+			strings.HasPrefix(lLower, "key points:") ||
+			strings.HasPrefix(lLower, "let's craft") ||
+			strings.HasPrefix(lLower, "now 3 sentences") ||
+			strings.HasPrefix(lLower, "count words:") ||
+			strings.HasPrefix(lLower, "intisar:") ||
+			strings.HasPrefix(lLower, "the articles cover") {
+			continue
+		}
+		if trimmed != "" {
+			validLines = append(validLines, trimmed)
+		}
+	}
+	if len(validLines) > 0 {
+		return strings.Join(validLines, " ")
+	}
+
+	return raw
 }
 
 func (c *OpenAICompatibleClient) AnswerQuestion(ctx context.Context, contextArticles, question string) (string, error) {

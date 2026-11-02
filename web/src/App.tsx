@@ -151,7 +151,7 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans bg-grid-pattern selection:bg-amber-500/30 selection:text-amber-300 max-w-full overflow-x-hidden">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans bg-grid-pattern selection:bg-amber-500/30 selection:text-amber-300 max-w-full overflow-x-hidden transition-colors duration-150">
       {/* 1. Sticky Header Bar with SaaS Actions */}
       <Header
         user={user}
@@ -213,16 +213,16 @@ export const App: React.FC = () => {
       </main>
 
       {/* 5. Editorial Footer */}
-      <footer className="border-t border-slate-800 bg-slate-950 py-6 px-4 lg:px-8 text-xs text-slate-400 font-mono">
+      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 py-6 px-4 lg:px-8 text-xs text-slate-500 dark:text-slate-400 font-mono transition-colors">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
           <div className="flex items-center gap-2">
-            <span className="font-editorial text-sm font-bold text-slate-100">
+            <span className="font-editorial text-sm font-bold text-slate-900 dark:text-slate-100">
               THE DISPATCH
             </span>
             <span>• Newsroom Intelligence & Media Radar</span>
           </div>
 
-          <div className="flex items-center gap-4 text-slate-400">
+          <div className="flex items-center gap-4 text-slate-500 dark:text-slate-400">
             <a
               href="https://t.me/PengumpulBeritaBot"
               target="_blank"

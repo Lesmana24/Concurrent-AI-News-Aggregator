@@ -7,6 +7,7 @@ import (
 	"math"
 	"news-aggregator/internal/ai"
 	"news-aggregator/internal/models"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -325,21 +326,18 @@ func (e *ClusterEngine) Recompute(ctx context.Context) ([]models.TopicCluster, e
 				contextBuilder.WriteString(fmt.Sprintf("[%d] %s (%s)\nRingkasan: %s\n\n", i+1, a.Title, a.Source, a.Summary))
 			}
 
-			prompt := "Dari kumpulan artikel berita terkait di atas, rumuskan:\n" +
-				"1. Judul isu utama yang singkat, padat, dan menarik (maksimal 10 kata).\n" +
-				"2. Intisari konsensus peristiwa (2-3 kalimat objektif).\n" +
-				"Format: <Judul> || <Intisari>"
+			prompt := "Dari kumpulan artikel berita terkait di atas, rumuskan konsensus peristiwa dalam Bahasa Indonesia baku.\n" +
+				"ATURAN MUTLAK:\n" +
+				"1. HANYA berikan output persis dengan format: <Judul> || <Intisari>\n" +
+				"2. <Judul>: Judul topik utama ringkas, padat, menarik (maksimal 10 kata).\n" +
+				"3. <Intisari>: Ringkasan konsensus 2-3 kalimat objektif.\n" +
+				"4. DILARANG KERAS menyertakan proses berpikir, bahasa Inggris ('We need to...', 'The relevant article...'), atau tag <think>/<intisari>."
 
 			aiResp, _, err := e.aiSvc.AnswerQuestion(ctx, contextBuilder.String(), prompt)
-			if err == nil && strings.Contains(aiResp, "||") {
-				parts := strings.SplitN(aiResp, "||", 2)
-				t := strings.TrimSpace(parts[0])
-				s := strings.TrimSpace(parts[1])
-				if len(t) > 5 && len(t) < 150 {
-					title = t
-				}
-				if len(s) > 20 {
-					summary = s
+			if err == nil {
+				if cleanTitle, cleanSummary, ok := cleanClusterSynthesis(aiResp); ok {
+					title = cleanTitle
+					summary = cleanSummary
 				}
 			}
 		}
@@ -651,4 +649,44 @@ func ResolveSecondaryThematicImage(text string) string {
 		return "https://images.unsplash.com/photo-1495020689067-958852a7765e?auto=format&fit=crop&w=800&q=80"
 	}
 }
+
+func cleanClusterSynthesis(aiResp string) (string, string, bool) {
+	// Strip reasoning tags or think blocks
+	aiResp = regexp.MustCompile(`(?s)<think>.*?</think>`).ReplaceAllString(aiResp, "")
+	aiResp = regexp.MustCompile(`(?i)</?(?:intisari|judul|summary|title)>`).ReplaceAllString(aiResp, "")
+	aiResp = strings.TrimSpace(aiResp)
+
+	if !strings.Contains(aiResp, "||") {
+		return "", "", false
+	}
+
+	parts := strings.SplitN(aiResp, "||", 2)
+	t := strings.TrimSpace(parts[0])
+	s := strings.TrimSpace(parts[1])
+
+	// Strip common English prompt leaks or preamble prefixes
+	badPrefixes := []string{
+		"we need to", "the relevant article", "here is", "based on", "according to",
+		"note:", "key points:", "output:", "summary:", "title:", "intisari:", "judul:",
+		"i need to", "this article is about",
+	}
+	tLower := strings.ToLower(t)
+	sLower := strings.ToLower(s)
+	for _, bp := range badPrefixes {
+		if strings.HasPrefix(tLower, bp) || strings.HasPrefix(sLower, bp) {
+			return "", "", false
+		}
+	}
+
+	// Clean accidental quotes or markdown wrap
+	t = strings.Trim(t, "\"`*[]")
+	s = strings.Trim(s, "\"`*[]")
+
+	if len(t) < 5 || len(t) > 160 || len(s) < 20 {
+		return "", "", false
+	}
+
+	return t, s, true
+}
+
 

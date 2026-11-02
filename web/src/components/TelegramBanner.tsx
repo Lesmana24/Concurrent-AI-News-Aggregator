@@ -8,7 +8,7 @@ export const TelegramBanner: React.FC = () => {
 
   return (
     <>
-      <section className="bg-gradient-to-r from-slate-900 via-slate-900/90 to-slate-950 border-b border-slate-800 px-3 sm:px-6 lg:px-8 py-3.5">
+      <section className="bg-gradient-to-r from-slate-100/80 via-white to-slate-50 dark:from-slate-900 dark:via-slate-900/90 dark:to-slate-950 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 lg:px-8 py-3.5 transition-colors">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-start sm:items-center gap-3">
             <div className="relative shrink-0 mt-0.5 sm:mt-0">
@@ -21,7 +21,7 @@ export const TelegramBanner: React.FC = () => {
                 }}
               />
               <div
-                className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-blue-500 text-white flex items-center justify-center text-[9px] font-bold border-2 border-slate-900 shadow-sm"
+                className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-blue-500 text-white flex items-center justify-center text-[9px] font-bold border-2 border-white dark:border-slate-900 shadow-sm"
                 title="Official Telegram Bot"
               >
                 ✓
@@ -29,15 +29,15 @@ export const TelegramBanner: React.FC = () => {
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-editorial text-sm sm:text-base font-bold text-slate-100">
+                <span className="font-editorial text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
                   Daily Driver Penuh di Telegram Bot
                 </span>
-                <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center gap-1 shadow-sm">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/40 flex items-center gap-1 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 dark:bg-blue-400 animate-pulse" />
                   <span>Official Bot</span>
                 </span>
               </div>
-              <p className="text-xs text-slate-300 font-sans mt-0.5 leading-relaxed">
+              <p className="text-xs text-slate-600 dark:text-slate-300 font-sans mt-0.5 leading-relaxed">
                 Notifikasi <i>Morning Briefing</i> otomatis (07:00 & 17:00 WIB), langganan topik, dan tanya-jawab AI interaktif langsung di smartphone Anda.
               </p>
             </div>
@@ -47,10 +47,10 @@ export const TelegramBanner: React.FC = () => {
             {/* QR Code button only shown on tablet & desktop */}
             <button
               onClick={() => setShowQR(true)}
-              className="hidden sm:flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-mono font-medium text-slate-200 min-h-[44px] transition"
+              className="hidden sm:flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-mono font-medium text-slate-700 dark:text-slate-200 min-h-[44px] transition shadow-xs"
               title="Lihat QR Code untuk Smartphone"
             >
-              <QrCode className="w-4 h-4 text-slate-400" />
+              <QrCode className="w-4 h-4 text-slate-500 dark:text-slate-400" />
               <span>QR Code</span>
             </button>
 

@@ -131,15 +131,15 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
   return (
     <div className="space-y-8 sm:space-y-10">
       {/* 1. Quick Scraper Sandbox */}
-      <section className="p-4 sm:p-7 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4 sm:space-y-5 shadow-xl">
+      <section className="p-4 sm:p-7 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 space-y-4 sm:space-y-5 shadow-sm dark:shadow-xl transition-colors">
         <div>
-          <span className="text-[11px] sm:text-xs font-mono text-amber-400 uppercase tracking-wider font-bold">
+          <span className="text-[11px] sm:text-xs font-mono text-amber-700 dark:text-amber-400 uppercase tracking-wider font-bold">
             Sandbox Ekstraksi Berita Instan
           </span>
-          <h2 className="font-editorial text-xl sm:text-2xl font-bold text-slate-100 mt-1">
+          <h2 className="font-editorial text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">
             Quick URL Scraper & AI Summarizer
           </h2>
-          <p className="text-xs sm:text-sm text-slate-300 mt-1 font-sans leading-relaxed">
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 font-sans leading-relaxed">
             Tempelkan tautan artikel dari portal media nasional untuk menguji ekstraksi metadata, foto redaksi, dan ringkasan AI seketika.
           </p>
         </div>
@@ -151,12 +151,12 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
             placeholder="https://www.cnnindonesia.com/nasional/..."
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
-            className="flex-1 px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 focus:border-amber-500 focus:outline-none text-slate-100 text-xs sm:text-sm font-sans placeholder-slate-500 transition min-h-[44px]"
+            className="flex-1 px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 focus:border-amber-500 focus:outline-none text-slate-900 dark:text-slate-100 text-xs sm:text-sm font-sans placeholder-slate-400 transition min-h-[44px]"
           />
           <button
             type="submit"
             disabled={ingesting}
-            className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-semibold text-xs sm:text-sm font-mono transition flex items-center justify-center gap-2 shrink-0 shadow-md shadow-amber-500/20 disabled:opacity-50 min-h-[44px] touch-manipulation"
+            className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-semibold text-xs sm:text-sm font-mono transition flex items-center justify-center gap-2 shrink-0 shadow-md shadow-amber-500/20 disabled:opacity-50 min-h-[44px] touch-manipulation cursor-pointer"
           >
             {ingesting ? (
               <>
@@ -173,23 +173,23 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
         </form>
 
         {ingestError && (
-          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-300 text-xs font-mono flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
             <span>{ingestError}</span>
           </div>
         )}
 
         {ingestedResult && (
-          <div className="p-4 sm:p-5 rounded-xl bg-slate-950 border border-amber-500/30 space-y-3">
+          <div className="p-4 sm:p-5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-amber-500/40 space-y-3">
             <div className="flex items-center justify-between text-xs font-mono">
-              <span className="text-emerald-400 flex items-center gap-1.5 font-bold">
+              <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5 font-bold">
                 <CheckCircle2 className="w-4 h-4" /> Berhasil Diekstrak & Diringkas
               </span>
-              <span className="text-slate-400">{ingestedResult.source}</span>
+              <span className="text-slate-500 dark:text-slate-400">{ingestedResult.source}</span>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-4 items-start">
-              <div className="w-full sm:w-44 h-32 rounded-lg overflow-hidden bg-slate-900 border border-slate-800 shrink-0">
+              <div className="w-full sm:w-44 h-32 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shrink-0">
                 <img
                   src={ingestedResult.image_url || FALLBACK_ARTICLE_IMAGE}
                   alt={ingestedResult.title}
@@ -201,10 +201,10 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
               </div>
 
               <div className="flex-1 space-y-2 w-full">
-                <h4 className="font-editorial text-base sm:text-lg font-bold text-slate-100 leading-snug">
+                <h4 className="font-editorial text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 leading-snug">
                   {ingestedResult.title}
                 </h4>
-                <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-sans bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+                <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-sans bg-white dark:bg-slate-900/60 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
                   {ingestedResult.summary}
                 </p>
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs font-mono">
@@ -212,7 +212,7 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
                     href={ingestedResult.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-slate-400 hover:text-amber-400 flex items-center gap-1.5 transition min-h-[36px]"
+                    className="text-slate-600 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 flex items-center gap-1.5 transition min-h-[36px]"
                   >
                     <span>Lihat Halaman Asli</span>
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -220,14 +220,14 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => handleToggleArticleWatchlist(ingestedResult)}
-                      className="text-slate-400 hover:text-amber-400 min-h-[36px] flex items-center gap-1"
+                      className="text-slate-600 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 min-h-[36px] flex items-center gap-1"
                     >
                       <Bookmark className="w-3.5 h-3.5" />
                       <span>Simpan</span>
                     </button>
                     <button
                       onClick={() => onSelectForComparison([ingestedResult.url])}
-                      className="text-amber-400 hover:text-amber-300 font-bold min-h-[36px] flex items-center gap-1"
+                      className="text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 font-bold min-h-[36px] flex items-center gap-1"
                     >
                       + Masukkan ke Spektrum Bias
                     </button>
@@ -241,18 +241,18 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
 
       {/* 2. Live Media Wire Feed */}
       <section className="space-y-5 sm:space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-slate-800 pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
           <div>
             <div className="flex items-center gap-2">
               <Radio className="w-5 h-5 text-amber-500 shrink-0" />
-              <h3 className="font-editorial text-xl sm:text-2xl font-bold text-slate-100">
+              <h3 className="font-editorial text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
                 Live News Wire Feed
               </h3>
-              <span className="text-xs font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
+              <span className="text-xs font-mono font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
                 {filteredArticles.length} Berita
               </span>
             </div>
-            <p className="text-xs sm:text-sm text-slate-300 font-sans mt-0.5">
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-sans mt-0.5">
               Arsip berita yang dikumpulkan mandiri oleh Harvester latar belakang tiap siklus cron.
             </p>
           </div>
@@ -261,7 +261,7 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
             <button
               onClick={() => fetchWire()}
               disabled={loadingWire}
-              className="flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-mono text-slate-200 transition min-h-[40px] touch-manipulation"
+              className="flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-mono text-slate-700 dark:text-slate-200 transition min-h-[40px] touch-manipulation shadow-xs cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${loadingWire ? 'animate-spin' : ''}`} />
               <span>Refresh</span>
@@ -279,12 +279,12 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
               placeholder="Cari kata kunci dalam feed (misal: 'inflasi', 'gibran', 'ekonomi')..."
-              className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-900/90 border border-slate-700/80 focus:border-amber-500 focus:outline-none text-xs sm:text-sm text-slate-100 placeholder-slate-400 font-sans min-h-[40px]"
+              className="w-full pl-9 pr-8 py-2 rounded-xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700/80 focus:border-amber-500 focus:outline-none text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 font-sans min-h-[40px]"
             />
             {searchFilter && (
               <button
                 onClick={() => setSearchFilter('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-mono text-slate-400 hover:text-slate-200"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-mono text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
                 ✕
               </button>
@@ -297,10 +297,10 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
               <button
                 key={src.value}
                 onClick={() => setSelectedSource(src.value)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-mono whitespace-nowrap shrink-0 transition min-h-[36px] touch-manipulation ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono whitespace-nowrap shrink-0 transition min-h-[36px] touch-manipulation cursor-pointer ${
                   selectedSource === src.value
-                    ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
-                    : 'bg-slate-900 text-slate-400 hover:text-slate-100 border border-slate-800 hover:border-slate-700'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 border border-slate-200 dark:border-slate-800'
                 }`}
               >
                 {src.label}
@@ -313,12 +313,12 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
         {loadingWire && (
           <div className="space-y-4">
             {[1, 2, 3, 4].map((n) => (
-              <div key={n} className="p-4 sm:p-5 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3 animate-pulse flex flex-col sm:flex-row gap-4">
-                <div className="w-full sm:w-40 h-36 sm:h-24 bg-slate-800 rounded-xl shrink-0" />
+              <div key={n} className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-3 animate-pulse flex flex-col sm:flex-row gap-4 shadow-xs">
+                <div className="w-full sm:w-40 h-36 sm:h-24 bg-slate-200 dark:bg-slate-800 rounded-xl shrink-0" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-4 w-32 bg-slate-800 rounded" />
-                  <div className="h-5 w-3/4 bg-slate-800 rounded" />
-                  <div className="h-10 w-full bg-slate-800/60 rounded" />
+                  <div className="h-4 w-32 bg-slate-200 dark:bg-slate-800 rounded" />
+                  <div className="h-5 w-3/4 bg-slate-200 dark:bg-slate-800 rounded" />
+                  <div className="h-10 w-full bg-slate-100 dark:bg-slate-800/60 rounded" />
                 </div>
               </div>
             ))}
@@ -326,13 +326,13 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
         )}
 
         {!loadingWire && wireError && (
-          <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs font-mono text-rose-300">
+          <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs font-mono text-rose-600 dark:text-rose-300">
             {wireError}
           </div>
         )}
 
         {!loadingWire && !wireError && filteredArticles.length === 0 && (
-          <div className="p-8 sm:p-10 text-center rounded-2xl bg-slate-900/40 border border-slate-800 text-xs sm:text-sm font-mono text-slate-400">
+          <div className="p-8 sm:p-10 text-center rounded-2xl bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm font-mono text-slate-500 dark:text-slate-400">
             Belum ada artikel yang sesuai dengan filter atau kata kunci "{searchFilter}".
           </div>
         )}
@@ -344,10 +344,10 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
               return (
                 <article
                   key={art.id}
-                  className="group p-4 sm:p-5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800/90 hover:border-amber-500/40 transition-all shadow-md flex flex-col sm:flex-row gap-4 sm:gap-5 items-start"
+                  className="group p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900/80 hover:bg-slate-50 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800/90 hover:border-amber-500/40 transition-all shadow-xs hover:shadow-md dark:shadow-md flex flex-col sm:flex-row gap-4 sm:gap-5 items-start"
                 >
                   {/* Article Thumbnail */}
-                  <div className="w-full sm:w-44 h-40 sm:h-28 rounded-xl overflow-hidden bg-slate-950 border border-slate-800 shrink-0 relative">
+                  <div className="w-full sm:w-44 h-40 sm:h-28 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shrink-0 relative">
                     <img
                       src={art.image_url || FALLBACK_ARTICLE_IMAGE}
                       alt={art.title}
@@ -358,7 +358,7 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     {!art.image_url && (
-                      <div className="absolute top-2 left-2 bg-slate-950/80 p-1 rounded text-slate-400">
+                      <div className="absolute top-2 left-2 bg-black/70 p-1 rounded text-white">
                         <ImageIcon className="w-3 h-3" />
                       </div>
                     )}
@@ -368,15 +368,15 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
                   <div className="flex-1 space-y-2 w-full flex flex-col justify-between">
                     <div>
                       <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs font-mono mb-1">
-                        <span className="px-2.5 py-0.5 rounded-md bg-slate-800 text-slate-200 border border-slate-700/80 font-medium text-[11px] sm:text-xs">
+                        <span className="px-2.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700/80 font-medium text-[11px] sm:text-xs">
                           {art.source || 'Media Nasional'}
                         </span>
-                        <span className="text-slate-400 text-[11px] sm:text-xs">
+                        <span className="text-slate-500 dark:text-slate-400 text-[11px] sm:text-xs">
                           {formatTimestamp(art.created_at || art.published_at)}
                         </span>
                       </div>
 
-                      <h4 className="font-editorial text-base sm:text-lg font-bold text-slate-100 group-hover:text-amber-400 transition-colors leading-snug">
+                      <h4 className="font-editorial text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors leading-snug">
                         <a
                           href={art.url}
                           target="_blank"
@@ -384,29 +384,29 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
                           className="hover:underline flex items-start gap-1.5"
                         >
                           <span>{art.title}</span>
-                          <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-amber-400 shrink-0 mt-0.5" />
+                          <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-amber-600 dark:group-hover:text-amber-400 shrink-0 mt-0.5" />
                         </a>
                       </h4>
                     </div>
 
-                    <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-sans line-clamp-2">
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed font-sans line-clamp-2">
                       {art.summary}
                     </p>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-850">
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
                       {/* Watchlist Toggle Button */}
                       <button
                         onClick={() => handleToggleArticleWatchlist(art)}
                         className={`text-xs font-mono transition flex items-center gap-1.5 min-h-[36px] px-2.5 py-1 rounded-lg border ${
                           bookmarked
-                            ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 font-semibold'
-                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                            ? 'bg-amber-500/15 border-amber-500/40 text-amber-800 dark:text-amber-400 font-bold'
+                            : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700'
                         }`}
                         title={bookmarked ? 'Hapus dari Watchlist' : 'Simpan ke Watchlist'}
                       >
                         {bookmarked ? (
                           <>
-                            <BookmarkCheck className="w-3.5 h-3.5 text-amber-400" />
+                            <BookmarkCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                             <span>Tersimpan</span>
                           </>
                         ) : (
@@ -420,7 +420,7 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
                       {/* Bias Spectrum Compare */}
                       <button
                         onClick={() => onSelectForComparison([art.url])}
-                        className="text-xs font-mono font-bold text-amber-400 hover:text-amber-300 transition flex items-center gap-1.5 min-h-[36px] touch-manipulation"
+                        className="text-xs font-mono font-bold text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition flex items-center gap-1.5 min-h-[36px] touch-manipulation cursor-pointer"
                       >
                         <Scale className="w-3.5 h-3.5" />
                         <span>+ Spektrum Bias</span>

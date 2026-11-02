@@ -18,7 +18,7 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }
   ]
 
   return (
-    <nav className="border-b border-slate-800 bg-slate-950/95 sticky top-[57px] z-30 px-3 sm:px-6 lg:px-8 shadow-sm">
+    <nav className="border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md sticky top-[57px] z-30 px-3 sm:px-6 lg:px-8 shadow-xs transition-colors">
       <div className="max-w-7xl mx-auto flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar overscroll-x-contain py-1">
         {tabs.map((tab) => {
           const Icon = tab.icon
@@ -29,11 +29,11 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }
               onClick={() => onTabChange(tab.id)}
               className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-mono text-xs whitespace-nowrap shrink-0 transition-all min-h-[44px] touch-manipulation ${
                 isActive
-                  ? 'bg-amber-500/15 text-amber-400 font-bold border border-amber-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
+                  ? 'bg-amber-500/10 dark:bg-amber-500/15 text-amber-800 dark:text-amber-400 font-bold border border-amber-500/30 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-900 border border-transparent'
               }`}
             >
-              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-amber-500' : 'text-slate-400'}`} />
+              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-amber-600 dark:text-amber-500' : 'text-slate-500 dark:text-slate-400'}`} />
               <span>{tab.label}</span>
             </button>
           )
