@@ -17,6 +17,7 @@ import (
 	"news-aggregator/internal/middleware"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/repository"
+	"news-aggregator/internal/scheduler"
 	"news-aggregator/internal/service"
 	"news-aggregator/internal/telegram"
 
@@ -110,28 +111,62 @@ func main() {
 	// Initialize Telegram Bot Service (Two-Way Interactive Chat & Push Notifications)
 	telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN")
 	telegramEnabled := os.Getenv("TELEGRAM_BOT_ENABLED")
+	var telegramBot *telegram.BotService
 	if strings.EqualFold(telegramEnabled, "true") && telegramToken != "" {
-		go func() {
-			for attempt := 1; attempt <= 10; attempt++ {
-				telegramBot, err := telegram.NewBotService(telegramToken, svc, repo)
-				if err == nil && telegramBot.IsEnabled() {
-					telegramBot.WithCrawler(harvester)
-					telegramBot.Start(context.Background())
-					slog.Info("Telegram Bot active and listening for messages", slog.Int("attempt", attempt))
-					return
-				}
-				slog.Warn("Telegram Bot initialization attempt failed, retrying in 2s...",
-					slog.Int("attempt", attempt),
-					slog.Any("error", err),
-				)
-				time.Sleep(2 * time.Second)
+		for attempt := 1; attempt <= 3; attempt++ {
+			bot, err := telegram.NewBotService(telegramToken, svc, repo)
+			if err == nil && bot.IsEnabled() {
+				telegramBot = bot
+				telegramBot.WithCrawler(harvester)
+				slog.Info("Telegram Bot successfully authorized", slog.Int("attempt", attempt))
+				break
 			}
-			slog.Error("Failed to start Telegram Bot after 10 attempts")
-		}()
+			slog.Warn("Telegram Bot auth attempt failed, retrying...", slog.Int("attempt", attempt), slog.Any("error", err))
+			time.Sleep(1 * time.Second)
+		}
 	}
 
-	// Initialize Handler with DB and Redis references for live health checks
-	handler := deliveryHttp.NewNewsHandler(svc, db).WithCache(redisCache).WithCrawler(harvester)
+	// Initialize Daily Briefing & Push Notification Scheduler
+	briefingEnabled := strings.EqualFold(os.Getenv("BRIEFING_ENABLED"), "true")
+	briefingInterval, _ := strconv.Atoi(os.Getenv("BRIEFING_INTERVAL_MINUTES"))
+	briefingHoursEnv := os.Getenv("BRIEFING_HOURS")
+	var briefingHours []string
+	if briefingHoursEnv != "" {
+		for _, h := range strings.Split(briefingHoursEnv, ",") {
+			trimmed := strings.TrimSpace(h)
+			if trimmed != "" {
+				briefingHours = append(briefingHours, trimmed)
+			}
+		}
+	}
+	if len(briefingHours) == 0 {
+		briefingHours = []string{"07:00", "17:00"}
+	}
+
+	briefingCfg := scheduler.Config{
+		Enabled:                  briefingEnabled,
+		DailyHours:               briefingHours,
+		IntervalMinutes:          briefingInterval,
+		MaxArticlesPerDigest:     5,
+		BroadcastRateLimitPerSec: 25,
+	}
+
+	briefingEngine := scheduler.NewBriefingEngine(briefingCfg, repo, aiService, telegramBot)
+	if briefingEnabled {
+		go briefingEngine.Start(context.Background())
+	}
+
+	if telegramBot != nil && telegramBot.IsEnabled() {
+		telegramBot.WithScheduler(briefingEngine)
+		go telegramBot.Start(context.Background())
+	}
+
+	// Initialize Handler with DB, Redis, Crawler, Scheduler, and Repo references
+	handler := deliveryHttp.NewNewsHandler(svc, db).
+		WithCache(redisCache).
+		WithCrawler(harvester).
+		WithScheduler(briefingEngine).
+		WithRepository(repo)
 
 	// Gin Engine with Structured Logging & Request-ID Middleware
 	r := gin.New()
@@ -166,6 +201,8 @@ func main() {
 			protected.POST("/news/compare", handler.Compare)
 			protected.POST("/compare", handler.Compare)
 			protected.POST("/crawler/trigger", handler.TriggerCrawler)
+			protected.POST("/notifications/broadcast", handler.TriggerBroadcast)
+			protected.GET("/notifications/subscriptions", handler.GetSubscriptions)
 		}
 	}
 

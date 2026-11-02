@@ -177,6 +177,35 @@ definitions:
     required:
     - urls
     type: object
+  scheduler.BroadcastRequest:
+    properties:
+      message:
+        description: 'Optional: custom announcement message; if empty, synthesizes
+          AI briefing'
+        type: string
+      topic:
+        description: 'Optional: specific topic (e.g. "teknologi") or empty for all'
+        type: string
+    type: object
+  scheduler.BroadcastResult:
+    properties:
+      duration:
+        type: integer
+      errors:
+        items:
+          type: string
+        type: array
+      failed_count:
+        type: integer
+      success_count:
+        type: integer
+      topic:
+        type: string
+      total_subscribers:
+        type: integer
+      triggered_at:
+        type: string
+    type: object
 host: localhost:8080
 info:
   contact: {}
@@ -403,6 +432,85 @@ paths:
       summary: Semantic vector search across archived news articles
       tags:
       - News
+  /api/v1/notifications/broadcast:
+    post:
+      consumes:
+      - application/json
+      description: Synthesizes an executive daily news digest and broadcasts it via
+        Telegram to active subscribers.
+      parameters:
+      - description: Optional broadcast parameters (topic, custom message)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/scheduler.BroadcastRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Broadcast dispatch results
+          schema:
+            items:
+              $ref: '#/definitions/scheduler.BroadcastResult'
+            type: array
+        "401":
+          description: API Key missing or invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Broadcast cycle is already in progress
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Broadcast execution error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Scheduler engine is not configured
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Manually trigger news briefing push broadcast
+      tags:
+      - Notifications
+  /api/v1/notifications/subscriptions:
+    get:
+      description: Returns active subscriber metrics, breakdown by topic, and cumulative
+        scheduler performance.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Subscription metrics and scheduler statistics
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: API Key missing or invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Database error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get notification subscribers and scheduler statistics
+      tags:
+      - Notifications
   /api/v1/qa:
     post:
       consumes:

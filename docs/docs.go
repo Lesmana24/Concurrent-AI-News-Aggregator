@@ -339,6 +339,127 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/notifications/broadcast": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Synthesizes an executive daily news digest and broadcasts it via Telegram to active subscribers.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Notifications"
+                ],
+                "summary": "Manually trigger news briefing push broadcast",
+                "parameters": [
+                    {
+                        "description": "Optional broadcast parameters (topic, custom message)",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/scheduler.BroadcastRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Broadcast dispatch results",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/scheduler.BroadcastResult"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "API Key missing or invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Broadcast cycle is already in progress",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Broadcast execution error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Scheduler engine is not configured",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/notifications/subscriptions": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns active subscriber metrics, breakdown by topic, and cumulative scheduler performance.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Notifications"
+                ],
+                "summary": "Get notification subscribers and scheduler statistics",
+                "responses": {
+                    "200": {
+                        "description": "Subscription metrics and scheduler statistics",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "API Key missing or invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Database error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/qa": {
             "post": {
                 "security": [
@@ -906,6 +1027,48 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "scheduler.BroadcastRequest": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "description": "Optional: custom announcement message; if empty, synthesizes AI briefing",
+                    "type": "string"
+                },
+                "topic": {
+                    "description": "Optional: specific topic (e.g. \"teknologi\") or empty for all",
+                    "type": "string"
+                }
+            }
+        },
+        "scheduler.BroadcastResult": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "integer"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "failed_count": {
+                    "type": "integer"
+                },
+                "success_count": {
+                    "type": "integer"
+                },
+                "topic": {
+                    "type": "string"
+                },
+                "total_subscribers": {
+                    "type": "integer"
+                },
+                "triggered_at": {
+                    "type": "string"
                 }
             }
         }

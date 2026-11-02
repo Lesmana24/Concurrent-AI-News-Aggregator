@@ -7,6 +7,8 @@ import (
 	"news-aggregator/internal/cache"
 	"news-aggregator/internal/crawler"
 	"news-aggregator/internal/models"
+	"news-aggregator/internal/repository"
+	"news-aggregator/internal/scheduler"
 	"news-aggregator/internal/service"
 	"strconv"
 	"strings"
@@ -17,10 +19,12 @@ import (
 )
 
 type NewsHandler struct {
-	service       service.NewsService
-	db            *gorm.DB
-	cacheSvc      cache.CacheService
-	crawlerEngine *crawler.HarvesterEngine
+	service         service.NewsService
+	db              *gorm.DB
+	repo            *repository.PostgresRepository
+	cacheSvc        cache.CacheService
+	crawlerEngine   *crawler.HarvesterEngine
+	schedulerEngine *scheduler.BriefingEngine
 }
 
 func NewNewsHandler(s service.NewsService, dbs ...*gorm.DB) *NewsHandler {
@@ -38,6 +42,16 @@ func (h *NewsHandler) WithCache(c cache.CacheService) *NewsHandler {
 
 func (h *NewsHandler) WithCrawler(e *crawler.HarvesterEngine) *NewsHandler {
 	h.crawlerEngine = e
+	return h
+}
+
+func (h *NewsHandler) WithRepository(r *repository.PostgresRepository) *NewsHandler {
+	h.repo = r
+	return h
+}
+
+func (h *NewsHandler) WithScheduler(s *scheduler.BriefingEngine) *NewsHandler {
+	h.schedulerEngine = s
 	return h
 }
 
@@ -370,4 +384,77 @@ func (h *NewsHandler) GetCrawlerStatus(c *gin.Context) {
 
 	stats := h.crawlerEngine.GetStats()
 	c.JSON(http.StatusOK, stats)
+}
+
+// TriggerBroadcast godoc
+// @Summary      Manually trigger news briefing push broadcast
+// @Description  Synthesizes an executive daily news digest and broadcasts it via Telegram to active subscribers.
+// @Tags         Notifications
+// @Accept       json
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Param        request body scheduler.BroadcastRequest false "Optional broadcast parameters (topic, custom message)"
+// @Success      200 {array} scheduler.BroadcastResult "Broadcast dispatch results"
+// @Failure      401 {object} map[string]string "API Key missing or invalid"
+// @Failure      409 {object} map[string]string "Broadcast cycle is already in progress"
+// @Failure      500 {object} map[string]string "Broadcast execution error"
+// @Failure      503 {object} map[string]string "Scheduler engine is not configured"
+// @Router       /api/v1/notifications/broadcast [post]
+func (h *NewsHandler) TriggerBroadcast(c *gin.Context) {
+	if h.schedulerEngine == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Scheduler engine is not configured"})
+		return
+	}
+
+	var req scheduler.BroadcastRequest
+	if c.Request.ContentLength > 0 {
+		_ = c.ShouldBindJSON(&req)
+	}
+
+	results, err := h.schedulerEngine.TriggerAll(c.Request.Context(), req.Topic, req.Message)
+	if err != nil {
+		if strings.Contains(err.Error(), "already in progress") {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, results)
+}
+
+// GetSubscriptions godoc
+// @Summary      Get notification subscribers and scheduler statistics
+// @Description  Returns active subscriber metrics, breakdown by topic, and cumulative scheduler performance.
+// @Tags         Notifications
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Success      200 {object} map[string]interface{} "Subscription metrics and scheduler statistics"
+// @Failure      401 {object} map[string]string "API Key missing or invalid"
+// @Failure      500 {object} map[string]string "Database error"
+// @Router       /api/v1/notifications/subscriptions [get]
+func (h *NewsHandler) GetSubscriptions(c *gin.Context) {
+	var stats *repository.SubscriptionStats
+	var err error
+	if h.repo != nil {
+		stats, err = h.repo.GetSubscriptionStats()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	} else {
+		stats = &repository.SubscriptionStats{TopicCounts: make(map[string]int64)}
+	}
+
+	var schedulerStats *scheduler.BroadcastStats
+	if h.schedulerEngine != nil {
+		s := h.schedulerEngine.GetStats()
+		schedulerStats = &s
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"subscriptions": stats,
+		"scheduler":     schedulerStats,
+	})
 }

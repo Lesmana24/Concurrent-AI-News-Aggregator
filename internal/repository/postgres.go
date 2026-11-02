@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"news-aggregator/internal/models"
 	"strings"
+	"time"
 
 	"github.com/pgvector/pgvector-go"
 	"gorm.io/gorm"
@@ -316,9 +317,162 @@ func (r *PostgresRepository) UnsubscribeTelegram(chatID int64) error {
 		Update("is_active", false).Error
 }
 
+// UnsubscribeTelegramTopic deactivates a specific subscription topic for a chat ID.
+// If topic is empty or "all", it deactivates all subscriptions for that chat.
+func (r *PostgresRepository) UnsubscribeTelegramTopic(chatID int64, topic string) error {
+	topic = strings.TrimSpace(strings.ToLower(topic))
+	if topic == "" || topic == "all" || topic == "semua" {
+		return r.UnsubscribeTelegram(chatID)
+	}
+
+	return r.db.Model(&models.TelegramSubscription{}).
+		Where("chat_id = ? AND topic = ?", chatID, topic).
+		Update("is_active", false).Error
+}
+
+// GetChatSubscriptions retrieves active subscriptions for a specific chat ID.
+func (r *PostgresRepository) GetChatSubscriptions(chatID int64) ([]models.TelegramSubscription, error) {
+	var subs []models.TelegramSubscription
+	err := r.db.Where("chat_id = ? AND is_active = ?", chatID, true).Order("topic ASC").Find(&subs).Error
+	return subs, err
+}
+
 // GetActiveTelegramSubscriptions retrieves all active subscriptions.
 func (r *PostgresRepository) GetActiveTelegramSubscriptions() ([]models.TelegramSubscription, error) {
 	var subs []models.TelegramSubscription
 	err := r.db.Where("is_active = ?", true).Find(&subs).Error
 	return subs, err
+}
+
+// GetSubscribersByTopic retrieves unique active chat IDs subscribed to a given topic.
+func (r *PostgresRepository) GetSubscribersByTopic(topic string) ([]int64, error) {
+	topic = strings.TrimSpace(strings.ToLower(topic))
+	var chatIDs []int64
+	err := r.db.Model(&models.TelegramSubscription{}).
+		Where("topic = ? AND is_active = ?", topic, true).
+		Distinct("chat_id").
+		Pluck("chat_id", &chatIDs).Error
+	return chatIDs, err
+}
+
+// GetActiveTopics retrieves distinct active topics currently subscribed to.
+func (r *PostgresRepository) GetActiveTopics() ([]string, error) {
+	var topics []string
+	err := r.db.Model(&models.TelegramSubscription{}).
+		Where("is_active = ?", true).
+		Distinct("topic").
+		Pluck("topic", &topics).Error
+	return topics, err
+}
+
+// DeactivateTelegramChat deactivates all subscriptions for a chat ID (e.g. when user blocked bot).
+func (r *PostgresRepository) DeactivateTelegramChat(chatID int64) error {
+	return r.db.Model(&models.TelegramSubscription{}).
+		Where("chat_id = ?", chatID).
+		Update("is_active", false).Error
+}
+
+// GetRecentArticlesByTopic retrieves recent articles (default within hours, with fallback) for a topic.
+func (r *PostgresRepository) GetRecentArticlesByTopic(ctx context.Context, topic string, hours int, limit int) ([]models.Article, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	if hours <= 0 {
+		hours = 24
+	}
+
+	topic = strings.TrimSpace(strings.ToLower(topic))
+	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour)
+
+	var articles []models.Article
+
+	isGeneric := topic == "" || topic == "berita" || topic == "umum" || topic == "berita umum" || topic == "semua"
+	if isGeneric {
+		// Try fetching within time window
+		err := r.db.WithContext(ctx).Model(&models.Article{}).
+			Where("created_at >= ?", cutoff).
+			Order("id DESC").
+			Limit(limit).
+			Find(&articles).Error
+		if err == nil && len(articles) > 0 {
+			return articles, nil
+		}
+
+		// Fallback to latest articles regardless of window
+		err = r.db.WithContext(ctx).Model(&models.Article{}).
+			Order("id DESC").
+			Limit(limit).
+			Find(&articles).Error
+		return articles, err
+	}
+
+	// Topic-specific search
+	pattern := "%" + topic + "%"
+	err := r.db.WithContext(ctx).Model(&models.Article{}).
+		Where("(LOWER(title) LIKE ? OR LOWER(summary) LIKE ? OR LOWER(source) LIKE ?) AND created_at >= ?", pattern, pattern, pattern, cutoff).
+		Order("id DESC").
+		Limit(limit).
+		Find(&articles).Error
+	if err == nil && len(articles) > 0 {
+		return articles, nil
+	}
+
+	// Fallback without cutoff
+	err = r.db.WithContext(ctx).Model(&models.Article{}).
+		Where("LOWER(title) LIKE ? OR LOWER(summary) LIKE ? OR LOWER(source) LIKE ?", pattern, pattern, pattern).
+		Order("id DESC").
+		Limit(limit).
+		Find(&articles).Error
+	if err == nil && len(articles) > 0 {
+		return articles, nil
+	}
+
+	// If still empty for niche topic, fallback to latest articles
+	err = r.db.WithContext(ctx).Model(&models.Article{}).
+		Order("id DESC").
+		Limit(limit).
+		Find(&articles).Error
+	return articles, err
+}
+
+// SubscriptionStats stores statistics about active subscribers.
+type SubscriptionStats struct {
+	TotalActive   int64            `json:"total_active"`
+	TotalInactive int64            `json:"total_inactive"`
+	UniqueUsers   int64            `json:"unique_users"`
+	TopicCounts   map[string]int64 `json:"topic_counts"`
+}
+
+// GetSubscriptionStats retrieves subscriber counts and breakdown by topic.
+func (r *PostgresRepository) GetSubscriptionStats() (*SubscriptionStats, error) {
+	var totalActive int64
+	var totalInactive int64
+	var uniqueUsers int64
+
+	_ = r.db.Model(&models.TelegramSubscription{}).Where("is_active = ?", true).Count(&totalActive).Error
+	_ = r.db.Model(&models.TelegramSubscription{}).Where("is_active = ?", false).Count(&totalInactive).Error
+	_ = r.db.Model(&models.TelegramSubscription{}).Where("is_active = ?", true).Distinct("chat_id").Count(&uniqueUsers).Error
+
+	type topicRow struct {
+		Topic string
+		Count int64
+	}
+	var rows []topicRow
+	_ = r.db.Model(&models.TelegramSubscription{}).
+		Select("topic, count(*) as count").
+		Where("is_active = ?", true).
+		Group("topic").
+		Scan(&rows).Error
+
+	topicCounts := make(map[string]int64)
+	for _, row := range rows {
+		topicCounts[row.Topic] = row.Count
+	}
+
+	return &SubscriptionStats{
+		TotalActive:   totalActive,
+		TotalInactive: totalInactive,
+		UniqueUsers:   uniqueUsers,
+		TopicCounts:   topicCounts,
+	}, nil
 }

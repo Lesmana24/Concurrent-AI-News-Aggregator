@@ -8,6 +8,7 @@ import (
 	"news-aggregator/internal/crawler"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/repository"
+	"news-aggregator/internal/scheduler"
 	"news-aggregator/internal/service"
 	"regexp"
 	"strings"
@@ -24,6 +25,7 @@ type BotService struct {
 	newsService  service.NewsService
 	repo         *repository.PostgresRepository
 	crawler      *crawler.HarvesterEngine
+	scheduler    *scheduler.BriefingEngine
 	systemAPIKey string
 	enabled      bool
 }
@@ -61,6 +63,24 @@ func NewBotService(token string, newsSvc service.NewsService, repo *repository.P
 func (b *BotService) WithCrawler(c *crawler.HarvesterEngine) *BotService {
 	b.crawler = c
 	return b
+}
+
+// WithScheduler injects the BriefingEngine reference for scheduled broadcasts and on-demand briefings.
+func (b *BotService) WithScheduler(s *scheduler.BriefingEngine) *BotService {
+	b.scheduler = s
+	return b
+}
+
+// SendNotification dispatches an HTML formatted notification to a specific Telegram chat ID.
+func (b *BotService) SendNotification(chatID int64, htmlContent string) error {
+	if !b.IsEnabled() {
+		return fmt.Errorf("telegram bot is not enabled")
+	}
+	msg := tgbotapi.NewMessage(chatID, htmlContent)
+	msg.ParseMode = "HTML"
+	msg.DisableWebPagePreview = false
+	_, err := b.bot.Send(msg)
+	return err
 }
 
 // IsEnabled returns true if the Telegram bot service is active.
@@ -149,9 +169,10 @@ Saya adalah asisten AI berita cerdas berbasis <b>Concurrent AI News Aggregator</
 • 🔄 <b>/sync:</b> Sinkronisasi dan arsipkan berita terkini otomatis dari Antara, CNN, CNBC, dll.
 • 🔍 <b>/search &lt;topik&gt;:</b> Cari arsip berita berbasis kesamaan makna semantik (pgvector)
 • ⚖️ <b>/compare &lt;url1&gt; &lt;url2&gt;:</b> Analisis perbandingan sudut pandang & sentimen media
-• ☀️ <b>/briefing:</b> Dapatkan rangkuman intisari berita utama saat ini
-• 🔔 <b>/subscribe &lt;topik&gt;:</b> Langganan notifikasi ringkasan berita harian
-• 🔕 <b>/unsubscribe:</b> Berhenti menerima notifikasi harian`,
+• ☀️ <b>/briefing [topik]:</b> Dapatkan rangkuman intisari berita utama saat ini
+• 🔔 <b>/subscribe &lt;topik&gt;:</b> Langganan notifikasi ringkasan berita harian (contoh: <code>/subscribe teknologi</code>)
+• 📋 <b>/subscriptions:</b> Cek daftar topik langganan aktif Anda
+• 🔕 <b>/unsubscribe [topik]:</b> Berhenti menerima notifikasi harian`,
 			html.EscapeString(userName),
 			html.EscapeString(b.bot.Self.UserName),
 		)
@@ -195,23 +216,34 @@ Saya adalah asisten AI berita cerdas berbasis <b>Concurrent AI News Aggregator</
 		b.handleCompare(ctx, chatID, urls)
 
 	case "subscribe":
-		topic := args
+		topic := strings.TrimSpace(strings.ToLower(args))
 		if topic == "" {
-			topic = "berita umum"
+			topic = "berita"
 		}
 		if b.repo != nil {
 			_ = b.repo.SubscribeTelegram(chatID, topic)
 		}
-		b.sendMessage(chatID, fmt.Sprintf("✅ <b>Berhasil Berlangganan!</b>\nAnda akan menerima notifikasi ringkasan berita pilihan untuk topik: <b>%s</b>.", html.EscapeString(topic)))
+		b.sendMessage(chatID, fmt.Sprintf("✅ <b>Berhasil Berlangganan!</b>\nAnda akan menerima notifikasi ringkasan berita berkala (07:00 & 17:00 WIB) untuk topik: <b>%s</b>.\n\nKetik <code>/subscriptions</code> untuk melihat daftar topik yang Anda ikuti.", html.EscapeString(topic)))
+
+	case "subscriptions", "status", "mystatus":
+		b.handleSubscriptions(chatID)
 
 	case "unsubscribe":
-		if b.repo != nil {
-			_ = b.repo.UnsubscribeTelegram(chatID)
+		if b.repo == nil {
+			b.sendMessage(chatID, "⚠️ Layanan database langganan tidak tersedia.")
+			return
 		}
-		b.sendMessage(chatID, "🔕 <b>Berhasil Berhenti Langganan.</b> Anda tidak akan menerima notifikasi ringkasan harian lagi. Ketik <code>/subscribe</code> kapan saja jika ingin kembali berlangganan.")
+		topic := strings.TrimSpace(strings.ToLower(args))
+		if topic == "" || topic == "all" || topic == "semua" {
+			_ = b.repo.UnsubscribeTelegram(chatID)
+			b.sendMessage(chatID, "🔕 <b>Berhasil Berhenti Langganan.</b> Anda tidak akan menerima notifikasi ringkasan harian lagi. Ketik <code>/subscribe &lt;topik&gt;</code> kapan saja jika ingin kembali berlangganan.")
+		} else {
+			_ = b.repo.UnsubscribeTelegramTopic(chatID, topic)
+			b.sendMessage(chatID, fmt.Sprintf("🔕 <b>Berhasil Berhenti Langganan Topik:</b> <code>%s</code>.\nKetik <code>/subscriptions</code> untuk melihat sisa topik aktif Anda.", html.EscapeString(topic)))
+		}
 
 	case "briefing":
-		b.handleBriefing(ctx, chatID)
+		b.handleBriefing(ctx, chatID, args)
 
 	default:
 		b.sendMessage(chatID, "❓ Perintah tidak dikenali. Ketik <code>/help</code> untuk melihat daftar perintah yang tersedia.")
@@ -342,11 +374,56 @@ func (b *BotService) handleCompare(ctx context.Context, chatID int64, urls []str
 	b.sendMessage(chatID, sb.String())
 }
 
-func (b *BotService) handleBriefing(ctx context.Context, chatID int64) {
+func (b *BotService) handleSubscriptions(chatID int64) {
+	if b.repo == nil {
+		b.sendMessage(chatID, "⚠️ Layanan database langganan tidak tersedia.")
+		return
+	}
+
+	subs, err := b.repo.GetChatSubscriptions(chatID)
+	if err != nil || len(subs) == 0 {
+		b.sendMessage(chatID, "📭 <b>Anda belum memiliki langganan aktif.</b>\n\n"+
+			"Ketik <code>/subscribe &lt;topik&gt;</code> untuk mulai menerima ringkasan berita harian otomatis!\n\n"+
+			"💡 <b>Rekomendasi Topik:</b>\n"+
+			"• <code>/subscribe teknologi</code>\n"+
+			"• <code>/subscribe ekonomi</code>\n"+
+			"• <code>/subscribe politik</code>\n"+
+			"• <code>/subscribe berita</code> (semua berita)",
+		)
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString("📋 <b>Daftar Topik Langganan Aktif Anda:</b>\n\n")
+	for i, s := range subs {
+		sb.WriteString(fmt.Sprintf("%d. 🔔 <b>%s</b>\n", i+1, html.EscapeString(strings.ToUpper(s.Topic))))
+	}
+	sb.WriteString("\n⏰ <i>Jadwal Push Notification Otomatis: 07:00 & 17:00 WIB.</i>\n\n")
+	sb.WriteString("💡 <i>Ketik <code>/unsubscribe &lt;topik&gt;</code> untuk berhenti langganan topik tertentu, atau <code>/unsubscribe</code> untuk berhenti semua.</i>")
+
+	b.sendMessage(chatID, sb.String())
+}
+
+func (b *BotService) handleBriefing(ctx context.Context, chatID int64, topic string) {
+	topic = strings.TrimSpace(topic)
+	if topic != "" && b.scheduler != nil {
+		b.sendMessage(chatID, fmt.Sprintf("☀️ <i>Menyusun Executive Briefing topik: %s...</i>", html.EscapeString(topic)))
+		msg, err := b.scheduler.SynthesizeBriefing(ctx, topic)
+		if err == nil && msg != "" {
+			b.sendMessage(chatID, msg)
+			return
+		}
+	}
+
 	b.sendMessage(chatID, "☀️ <i>Menyusun Executive Morning Briefing untuk Anda...</i>")
 
+	question := "Apa rangkuman intisari peristiwa berita paling penting dan terkini yang perlu diketahui?"
+	if topic != "" {
+		question = fmt.Sprintf("Apa rangkuman intisari peristiwa berita terkini seputar %s?", topic)
+	}
+
 	resp, err := b.newsService.GlobalQA(ctx, b.systemAPIKey, models.GlobalQARequest{
-		Question: "Apa rangkuman intisari peristiwa berita paling penting dan terkini yang perlu diketahui?",
+		Question: question,
 	})
 	if err != nil {
 		b.sendMessage(chatID, fmt.Sprintf("❌ Gagal menyusun briefing: %s", html.EscapeString(err.Error())))
