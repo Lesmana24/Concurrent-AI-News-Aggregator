@@ -50,13 +50,43 @@ func NewBotService(token string, newsSvc service.NewsService, repo *repository.P
 		_, _ = repo.EnsureSystemUser(systemKey, "telegram-bot@newsaggregator.internal", 999999)
 	}
 
-	return &BotService{
+	botSvc := &BotService{
 		bot:          bot,
 		newsService:  newsSvc,
 		repo:         repo,
 		systemAPIKey: systemKey,
 		enabled:      true,
-	}, nil
+	}
+
+	botSvc.registerBotCommands()
+
+	return botSvc, nil
+}
+
+// registerBotCommands sets the command autocomplete list and menu button in Telegram.
+func (b *BotService) registerBotCommands() {
+	if !b.IsEnabled() {
+		return
+	}
+
+	commands := []tgbotapi.BotCommand{
+		{Command: "start", Description: "Mulai bot & panduan fitur"},
+		{Command: "help", Description: "Bantuan & daftar perintah"},
+		{Command: "sync", Description: "Sinkronisasi berita terbaru dari RSS feeds"},
+		{Command: "search", Description: "Cari berita arsip (pgvector / kata kunci)"},
+		{Command: "briefing", Description: "Rangkuman berita harian (Executive Digest)"},
+		{Command: "compare", Description: "Bandingkan sudut pandang & sentimen media"},
+		{Command: "subscribe", Description: "Langganan ringkasan harian (07:00 & 17:00 WIB)"},
+		{Command: "subscriptions", Description: "Cek daftar topik langganan aktif Anda"},
+		{Command: "unsubscribe", Description: "Berhenti langganan notifikasi harian"},
+	}
+
+	cmdConfig := tgbotapi.NewSetMyCommands(commands...)
+	if _, err := b.bot.Request(cmdConfig); err != nil {
+		slog.Warn("Failed to register Telegram bot command menu", slog.String("error", err.Error()))
+	} else {
+		slog.Info("Telegram bot command menu successfully registered")
+	}
 }
 
 // WithCrawler injects the HarvesterEngine reference to allow /sync command.
