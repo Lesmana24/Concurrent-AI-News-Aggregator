@@ -530,6 +530,36 @@ paths:
       summary: Ask questions about provided news articles
       tags:
       - News
+  /api/v1/news/recent:
+    get:
+      description: Retrieves recent articles from the news wire with optional filtering
+        by media source.
+      parameters:
+      - description: 'Number of articles to return (default: 20, max: 100)'
+        in: query
+        name: limit
+        type: integer
+      - description: Filter by news outlet source (e.g. Antara News, CNBC Indonesia)
+        in: query
+        name: source
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of recent articles
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get recent harvested articles
+      tags:
+      - News
   /api/v1/news/search:
     get:
       description: Searches stored news articles based on dense embedding cosine similarity
@@ -877,6 +907,29 @@ paths:
       summary: Summarize news articles concurrently
       tags:
       - News
+  /api/v1/user/me:
+    get:
+      description: Returns user profile, current remaining quota, and API key status
+        for the dashboard.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User profile and quota telemetry
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: API Key is missing or invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get current API Key and quota telemetry
+      tags:
+      - User
 securityDefinitions:
   ApiKeyAuth:
     in: header

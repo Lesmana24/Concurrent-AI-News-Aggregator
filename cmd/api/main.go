@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -21,6 +23,7 @@ import (
 	"news-aggregator/internal/scheduler"
 	"news-aggregator/internal/service"
 	"news-aggregator/internal/telegram"
+	"news-aggregator/web"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -188,9 +191,10 @@ func main() {
 		WithClustering(clusterEngine).
 		WithRepository(repo)
 
-	// Gin Engine with Structured Logging & Request-ID Middleware
+	// Gin Engine with Structured Logging, Request-ID, and CORS Middleware
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.CORS())
 	r.Use(middleware.RequestIDAndLogger())
 
 	// Distributed Rate Limiting (Default: 60 requests per minute)
@@ -207,12 +211,14 @@ func main() {
 		api.GET("/news/search", handler.SemanticSearch)
 		api.GET("/news/trending", handler.GetTrending)
 		api.GET("/news/clusters/:id", handler.GetClusterDetail)
+		api.GET("/news/recent", handler.GetRecentArticles)
 		api.GET("/crawler/status", handler.GetCrawlerStatus)
 
 		// Protected routes
 		protected := api.Group("/")
 		protected.Use(middleware.APIKeyAuth(svc))
 		{
+			protected.GET("/user/me", handler.GetMe)
 			protected.POST("/summarize", handler.Summarize)
 			protected.POST("/qa", handler.QA)
 			protected.POST("/news/qa", handler.QA)
@@ -227,6 +233,34 @@ func main() {
 			protected.POST("/notifications/broadcast", handler.TriggerBroadcast)
 			protected.GET("/notifications/subscriptions", handler.GetSubscriptions)
 		}
+	}
+
+	// Single-Binary Web UI Serving (Static Assets & SPA Fallback)
+	distSubFS, err := fs.Sub(web.DistFS, "dist")
+	if err == nil {
+		fileServer := http.FileServer(http.FS(distSubFS))
+		r.NoRoute(func(c *gin.Context) {
+			path := c.Request.URL.Path
+			if strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/swagger") {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Endpoint not found"})
+				return
+			}
+
+			// Try to open static file
+			trimmedPath := strings.TrimPrefix(path, "/")
+			if trimmedPath == "" {
+				trimmedPath = "index.html"
+			}
+			if f, openErr := distSubFS.Open(trimmedPath); openErr == nil {
+				_ = f.Close()
+				fileServer.ServeHTTP(c.Writer, c.Request)
+				return
+			}
+
+			// SPA Fallback
+			c.Request.URL.Path = "/"
+			fileServer.ServeHTTP(c.Writer, c.Request)
+		})
 	}
 
 	port := os.Getenv("PORT")

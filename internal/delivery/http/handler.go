@@ -564,3 +564,105 @@ func (h *NewsHandler) RecomputeClusters(c *gin.Context) {
 		"computed_at":    stats.LastComputedAt,
 	})
 }
+
+// GetRecentArticles godoc
+// @Summary      Get recent harvested articles
+// @Description  Retrieves recent articles from the news wire with optional filtering by media source.
+// @Tags         News
+// @Produce      json
+// @Param        limit   query     int     false  "Number of articles to return (default: 20, max: 100)"
+// @Param        source  query     string  false  "Filter by news outlet source (e.g. Antara News, CNBC Indonesia)"
+// @Success      200     {object}  map[string]interface{} "List of recent articles"
+// @Failure      500     {object}  map[string]string "Internal server error"
+// @Router       /api/v1/news/recent [get]
+func (h *NewsHandler) GetRecentArticles(c *gin.Context) {
+	if h.repo == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Repository not configured"})
+		return
+	}
+
+	limit := 20
+	if l, err := strconv.Atoi(c.Query("limit")); err == nil && l > 0 {
+		limit = l
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	source := strings.TrimSpace(c.Query("source"))
+	var articles []models.Article
+	var err error
+
+	if source != "" {
+		articles, err = h.repo.GetRecentArticlesByTopic(c.Request.Context(), source, 72, limit)
+	} else {
+		articles, err = h.repo.GetRecentArticles(c.Request.Context(), 72)
+		if len(articles) > limit {
+			articles = articles[:limit]
+		}
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	type WireArticleItem struct {
+		ID          uint      `json:"id"`
+		Title       string    `json:"title"`
+		URL         string    `json:"url"`
+		Summary     string    `json:"summary"`
+		Source      string    `json:"source"`
+		PublishedAt time.Time `json:"published_at"`
+		CreatedAt   time.Time `json:"created_at"`
+	}
+
+	res := make([]WireArticleItem, len(articles))
+	for i, a := range articles {
+		res[i] = WireArticleItem{
+			ID:          a.ID,
+			Title:       a.Title,
+			URL:         a.URL,
+			Summary:     a.Summary,
+			Source:      a.Source,
+			PublishedAt: a.PublishedAt,
+			CreatedAt:   a.CreatedAt,
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total":    len(res),
+		"articles": res,
+	})
+}
+
+// GetMe godoc
+// @Summary      Get current API Key and quota telemetry
+// @Description  Returns user profile, current remaining quota, and API key status for the dashboard.
+// @Tags         User
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Success      200 {object} map[string]interface{} "User profile and quota telemetry"
+// @Failure      401 {object} map[string]string "API Key is missing or invalid"
+// @Router       /api/v1/user/me [get]
+func (h *NewsHandler) GetMe(c *gin.Context) {
+	apiKey := c.GetHeader("X-API-KEY")
+	if apiKey == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "API Key is missing"})
+		return
+	}
+
+	user, err := h.service.GetUser(apiKey)
+	if err != nil || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid API Key"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":      user.ID,
+		"email":   user.Email,
+		"quota":   user.Quota,
+		"status":  "active",
+		"api_key": apiKey,
+	})
+}
