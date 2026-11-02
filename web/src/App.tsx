@@ -53,7 +53,7 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#080C14] text-[#F3F4F6] flex flex-col font-sans bg-grid-pattern selection:bg-[#D97706]/30 selection:text-[#FBBF24]">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans bg-grid-pattern selection:bg-amber-500/30 selection:text-amber-300 max-w-full overflow-x-hidden">
       {/* 1. Sticky Header Bar */}
       <Header
         user={user}
@@ -65,11 +65,11 @@ export const App: React.FC = () => {
       {/* 2. Telegram Bot Gateway Showcase Banner */}
       <TelegramBanner />
 
-      {/* 3. Navigation Bar */}
+      {/* 3. Navigation Bar (Touch & Swipe Friendly) */}
       <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
 
       {/* 4. Main Active Tab View Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-8">
         {activeTab === 'trending' && (
           <TrendingRadar
             apiKey={apiKey}
@@ -103,21 +103,21 @@ export const App: React.FC = () => {
       </main>
 
       {/* 5. Editorial Footer */}
-      <footer className="border-t border-[#1F2937] bg-[#0E131F] py-6 px-4 lg:px-8 text-xs text-[#9CA3AF] font-mono">
+      <footer className="border-t border-slate-800 bg-slate-950 py-6 px-4 lg:px-8 text-xs text-slate-400 font-mono">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
           <div className="flex items-center gap-2">
-            <span className="font-editorial text-sm font-bold text-[#F3F4F6]">
+            <span className="font-editorial text-sm font-bold text-slate-100">
               THE DISPATCH
             </span>
             <span>• Newsroom Intelligence & Media Radar</span>
           </div>
 
-          <div className="flex items-center gap-4 text-[#6B7280]">
+          <div className="flex items-center gap-4 text-slate-400">
             <a
               href="https://t.me/PengumpulBeritaBot"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-[#F59E0B] transition"
+              className="hover:text-amber-400 transition"
             >
               @PengumpulBeritaBot
             </a>
@@ -126,7 +126,7 @@ export const App: React.FC = () => {
               href="/swagger/index.html"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-[#F59E0B] transition"
+              className="hover:text-amber-400 transition"
             >
               OpenAPI Swagger
             </a>

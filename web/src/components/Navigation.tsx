@@ -18,8 +18,8 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }
   ]
 
   return (
-    <nav className="border-b border-[#1F2937] bg-[#0E131F] px-4 lg:px-8 overflow-x-auto">
-      <div className="max-w-7xl mx-auto flex items-center gap-1 sm:gap-2">
+    <nav className="border-b border-slate-800 bg-slate-950/95 sticky top-[57px] z-30 px-3 sm:px-6 lg:px-8 shadow-sm">
+      <div className="max-w-7xl mx-auto flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar overscroll-x-contain py-1">
         {tabs.map((tab) => {
           const Icon = tab.icon
           const isActive = activeTab === tab.id
@@ -27,13 +27,13 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className={`flex items-center gap-2 py-3 px-3.5 border-b-2 font-mono text-xs whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-mono text-xs whitespace-nowrap shrink-0 transition-all min-h-[44px] touch-manipulation ${
                 isActive
-                  ? 'border-[#D97706] text-[#F59E0B] font-semibold bg-[#111827]/50'
-                  : 'border-transparent text-[#9CA3AF] hover:text-[#F3F4F6] hover:border-[#374151]'
+                  ? 'bg-amber-500/15 text-amber-400 font-bold border border-amber-500/30 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
               }`}
             >
-              <Icon className={`w-4 h-4 ${isActive ? 'text-[#D97706]' : 'text-[#6B7280]'}`} />
+              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-amber-500' : 'text-slate-400'}`} />
               <span>{tab.label}</span>
             </button>
           )
@@ -42,4 +42,3 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }
     </nav>
   )
 }
-
