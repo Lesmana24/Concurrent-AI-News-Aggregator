@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Send, QrCode, ExternalLink, X, Smartphone } from 'lucide-react'
+import { QrCode, ExternalLink, X, Smartphone } from 'lucide-react'
 
 export const TelegramBanner: React.FC = () => {
   const [showQR, setShowQR] = useState(false)
@@ -11,16 +11,30 @@ export const TelegramBanner: React.FC = () => {
       <section className="bg-gradient-to-r from-slate-900 via-slate-900/90 to-slate-950 border-b border-slate-800 px-3 sm:px-6 lg:px-8 py-3.5">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-start sm:items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0 shadow-sm mt-0.5 sm:mt-0">
-              <Send className="w-4 h-4 -rotate-12 translate-x-0.5" />
+            <div className="relative shrink-0 mt-0.5 sm:mt-0">
+              <img
+                src="/botpic.jpg"
+                alt="@PengumpulBeritaBot Profile"
+                className="w-10 h-10 sm:w-11 sm:h-11 rounded-full object-cover border-2 border-blue-500/60 shadow-md ring-1 ring-blue-500/30"
+                onError={(e) => {
+                  ;(e.target as HTMLElement).style.display = 'none'
+                }}
+              />
+              <div
+                className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-blue-500 text-white flex items-center justify-center text-[9px] font-bold border-2 border-slate-900 shadow-sm"
+                title="Official Telegram Bot"
+              >
+                ✓
+              </div>
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-editorial text-sm sm:text-base font-bold text-slate-100">
                   Daily Driver Penuh di Telegram Bot
                 </span>
-                <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                  Daily Push
+                <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center gap-1 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                  <span>Official Bot</span>
                 </span>
               </div>
               <p className="text-xs text-slate-300 font-sans mt-0.5 leading-relaxed">

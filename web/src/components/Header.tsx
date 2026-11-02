@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Key, ShieldCheck, X } from 'lucide-react'
+import { Key, ShieldCheck, X, CheckCircle2 } from 'lucide-react'
 import type { UserMe } from '../types'
 import { DEFAULT_DEMO_KEY } from '../services/api'
 
@@ -22,19 +22,42 @@ export const Header: React.FC<HeaderProps> = ({ user, apiKey, onApiKeyChange, is
   return (
     <>
       <header className="border-b border-slate-800 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40 px-3 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-2 sm:gap-4">
-        {/* Brand & Editorial Title */}
+        {/* Brand & Editorial Title with Official Telegram Bot Avatar */}
         <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 font-editorial font-bold text-lg sm:text-xl select-none shadow-sm">
-            D
+          <div className="relative shrink-0">
+            <img
+              src="/logo.jpg"
+              alt="The Dispatch • @PengumpulBeritaBot Logo"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover border border-amber-500/40 shadow-md ring-1 ring-amber-500/20"
+              onError={(e) => {
+                // If logo fails, fallback to letter D avatar
+                const target = e.target as HTMLElement
+                target.style.display = 'none'
+                const parent = target.parentElement
+                if (parent) {
+                  const fallback = document.createElement('div')
+                  fallback.className = 'w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 font-editorial font-bold text-lg sm:text-xl'
+                  fallback.innerText = 'D'
+                  parent.appendChild(fallback)
+                }
+              }}
+            />
           </div>
           <div>
-            <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <span className="font-editorial text-base sm:text-xl font-bold tracking-tight text-slate-100">
                 THE DISPATCH
               </span>
-              <span className="text-[9px] sm:text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                PLAYGROUND
-              </span>
+              <a
+                href="https://t.me/PengumpulBeritaBot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 transition flex items-center gap-1 font-bold shadow-sm"
+                title="Buka Bot Terverifikasi di Telegram"
+              >
+                <CheckCircle2 className="w-3 h-3 text-blue-400" />
+                <span>@PengumpulBeritaBot</span>
+              </a>
             </div>
             <p className="text-xs text-slate-400 font-sans hidden md:block">
               Newsroom Intelligence & Multi-Perspective Radar Terminal
