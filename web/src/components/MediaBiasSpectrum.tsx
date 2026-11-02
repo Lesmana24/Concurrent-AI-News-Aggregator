@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Scale, Plus, Trash2, CheckCircle2, AlertTriangle, RefreshCw, BarChart2 } from 'lucide-react'
+import { Scale, Plus, Trash2, CheckCircle2, AlertTriangle, RefreshCw, BarChart2, ExternalLink } from 'lucide-react'
 import type { NewsCompareResponse } from '../types'
 import { api } from '../services/api'
 
@@ -17,7 +17,7 @@ export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, pr
   // Presets for 1-click playground testing
   const presets = [
     {
-      title: 'Inflasi Pangan Oktober 2026',
+      title: 'Inflasi Pangan Nasional Oktober 2026',
       desc: 'Antara News vs CNBC Indonesia vs Republika',
       urls: [
         'https://www.antaranews.com/berita/5825751/bps-ri-alami-inflasi-bulanan-022-persen-pada-oktober-2026',
@@ -89,52 +89,58 @@ export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, pr
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       {/* Header */}
-      <div className="border-b border-[#1F2937] pb-4">
-        <span className="text-[11px] font-mono text-[#D97706] uppercase tracking-wider font-semibold">
+      <div className="border-b border-slate-800 pb-5">
+        <span className="text-xs font-mono text-amber-400 uppercase tracking-wider font-bold">
           Analisis Komparatif Multi-Perspektif
         </span>
-        <h2 className="font-editorial text-xl lg:text-2xl font-bold text-[#F3F4F6] mt-0.5">
+        <h2 className="font-editorial text-2xl lg:text-3xl font-bold text-slate-100 mt-1">
           Media Bias & Sentiment Spectrum
         </h2>
-        <p className="text-xs text-[#9CA3AF] mt-1">
-          Membedah secara visual bagaimana berbagai redaksi media membingkai (*framing*) peristiwa yang sama dengan skor sentimen objektif.
+        <p className="text-sm text-slate-300 mt-1.5 font-sans leading-relaxed max-w-2xl">
+          Membedah secara visual bagaimana berbagai redaksi media membingkai (<i>framing</i>) peristiwa yang sama dengan skor sentimen objektif, konsensus fakta, dan titik divergensi narasi.
         </p>
       </div>
 
       {/* Preset Buttons for Quick 1-Click Testing */}
-      <div className="space-y-2">
-        <span className="text-xs font-mono text-[#9CA3AF]">Uji Coba Cepat dengan Sampel Kasus Nyata:</span>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="space-y-3">
+        <span className="text-xs font-mono text-slate-400 font-semibold uppercase tracking-wider">
+          Uji Coba Cepat dengan Sampel Kasus Nyata:
+        </span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {presets.map((p, idx) => (
             <button
               key={idx}
               onClick={() => handleApplyPreset(p.urls)}
               disabled={loading}
-              className="p-3 rounded-lg bg-[#111827] hover:bg-[#182032] border border-[#1F2937] hover:border-[#D97706]/40 text-left transition flex items-start justify-between gap-2"
+              className="p-4 rounded-xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-amber-500/50 text-left transition-all shadow-md flex items-start justify-between gap-3 group"
             >
               <div>
-                <h4 className="font-editorial text-sm font-bold text-[#F3F4F6]">{p.title}</h4>
-                <p className="text-xs text-[#9CA3AF] mt-0.5 font-mono">{p.desc}</p>
+                <h4 className="font-editorial text-base font-bold text-slate-100 group-hover:text-amber-400 transition-colors">
+                  {p.title}
+                </h4>
+                <p className="text-xs text-slate-400 mt-1 font-mono">{p.desc}</p>
               </div>
-              <span className="text-xs font-mono text-[#D97706] shrink-0 mt-0.5">Tes Kasus ↗</span>
+              <span className="text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5 group-hover:translate-x-0.5 transition-transform">
+                Tes Kasus ↗
+              </span>
             </button>
           ))}
         </div>
       </div>
 
       {/* URL Inputs Form */}
-      <section className="p-6 rounded-lg bg-[#111827] border border-[#1F2937] space-y-4">
+      <section className="p-6 sm:p-8 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-5 shadow-xl">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-mono text-[#F3F4F6] font-semibold uppercase">
+          <h3 className="text-xs font-mono text-slate-300 font-bold uppercase tracking-wider">
             Tautan Artikel untuk Diaudit (2 - 5 Sumber)
           </h3>
           {urls.length < 5 && (
             <button
               type="button"
               onClick={addUrlField}
-              className="text-xs font-mono text-[#D97706] hover:text-[#F59E0B] flex items-center gap-1 transition"
+              className="text-xs font-mono text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1.5 transition"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Tambah URL</span>
@@ -142,10 +148,10 @@ export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, pr
           )}
         </div>
 
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           {urls.map((url, index) => (
-            <div key={index} className="flex items-center gap-2">
-              <span className="text-xs font-mono text-[#6B7280] w-6 text-right">
+            <div key={index} className="flex items-center gap-2.5">
+              <span className="text-xs font-mono text-slate-500 w-6 text-right font-bold">
                 {index + 1}.
               </span>
               <input
@@ -153,13 +159,13 @@ export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, pr
                 value={url}
                 onChange={(e) => handleUrlChange(index, e.target.value)}
                 placeholder={`URL Berita Media #${index + 1}`}
-                className="flex-1 bg-[#080C14] border border-[#1F2937] focus:border-[#D97706] rounded-md px-3.5 py-2 text-xs font-mono text-[#F3F4F6] placeholder:text-[#4B5563] focus:outline-none"
+                className="flex-1 bg-slate-950 border border-slate-700/80 focus:border-amber-500 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-mono text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors"
               />
               {urls.length > 2 && (
                 <button
                   type="button"
                   onClick={() => removeUrlField(index)}
-                  className="text-[#6B7280] hover:text-[#E11D48] p-1.5 transition"
+                  className="text-slate-500 hover:text-rose-400 p-2 transition rounded-lg hover:bg-slate-800"
                   title="Hapus URL"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -173,7 +179,7 @@ export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, pr
           <button
             onClick={() => handleCompare()}
             disabled={loading}
-            className="px-6 py-2.5 rounded-md bg-[#D97706] hover:bg-[#B45309] text-white text-xs font-mono font-medium transition disabled:opacity-50 flex items-center gap-2"
+            className="w-full sm:w-auto px-6 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs sm:text-sm font-mono font-semibold transition disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg"
           >
             {loading ? (
               <>
@@ -190,7 +196,7 @@ export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, pr
         </div>
 
         {error && (
-          <div className="p-3 rounded-md bg-[#E11D48]/10 border border-[#E11D48]/30 text-xs font-mono text-[#FCA5A5]">
+          <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs font-mono text-rose-300">
             {error}
           </div>
         )}
@@ -198,90 +204,93 @@ export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, pr
 
       {/* Loading Skeleton */}
       {loading && (
-        <div className="p-8 rounded-lg bg-[#111827] border border-[#1F2937] space-y-4 animate-pulse">
-          <div className="h-6 w-1/3 bg-[#1F2937] rounded" />
-          <div className="h-28 w-full bg-[#182032] rounded" />
-          <div className="h-20 w-full bg-[#182032] rounded" />
+        <div className="p-8 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4 animate-pulse">
+          <div className="h-6 w-1/3 bg-slate-800 rounded" />
+          <div className="h-28 w-full bg-slate-800/60 rounded-xl" />
+          <div className="h-20 w-full bg-slate-800/60 rounded-xl" />
         </div>
       )}
 
       {/* Results View */}
       {result && !loading && (
-        <section className="space-y-6">
+        <section className="space-y-8 animate-in fade-in">
           {/* Issue Header */}
-          <div className="p-5 rounded-lg bg-[#182032] border border-[#1E293B]">
-            <span className="text-[11px] font-mono text-[#D97706] uppercase tracking-wider font-semibold">
+          <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3 shadow-xl">
+            <span className="text-xs font-mono text-amber-400 uppercase tracking-wider font-bold">
               Topik Isu Teridentifikasi
             </span>
-            <h3 className="font-editorial text-xl font-bold text-[#F3F4F6] mt-0.5">
+            <h3 className="font-editorial text-2xl font-bold text-slate-100 leading-snug">
               {result.topic}
             </h3>
-            <p className="text-xs text-[#9CA3AF] mt-2 leading-relaxed bg-[#0E131F] p-3 rounded border border-[#1F2937]">
-              <b>Intisari Objektif Konsensus:</b> {result.objective_summary}
-            </p>
+            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
+              <span className="text-xs font-mono font-semibold text-slate-400">
+                Intisari Objektif Konsensus:
+              </span>
+              <p className="text-sm text-slate-200 leading-relaxed font-sans">
+                {result.objective_summary}
+              </p>
+            </div>
           </div>
 
-          {/* The Media Divergence Spectrum (SVG Bar Chart) */}
-          <div className="p-6 rounded-lg bg-[#111827] border border-[#1F2937] space-y-4">
-            <div className="flex items-center justify-between border-b border-[#1F2937] pb-3">
-              <div className="flex items-center gap-2">
-                <BarChart2 className="w-4 h-4 text-[#D97706]" />
-                <h4 className="font-editorial text-base font-bold text-[#F3F4F6]">
+          {/* The Media Divergence Spectrum */}
+          <div className="p-6 sm:p-8 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-6 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2.5">
+                <BarChart2 className="w-5 h-5 text-amber-500" />
+                <h4 className="font-editorial text-lg sm:text-xl font-bold text-slate-100">
                   The Media Divergence Spectrum
                 </h4>
               </div>
-              <div className="flex items-center gap-4 text-xs font-mono text-[#9CA3AF]">
-                <span className="flex items-center gap-1">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#E11D48]" /> Kritis / Negatif (-1.0)
+              <div className="flex items-center gap-4 text-xs font-mono">
+                <span className="flex items-center gap-1.5 text-rose-400">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Kritis (-1.0)
                 </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#9CA3AF]" /> Netral (0.0)
+                <span className="flex items-center gap-1.5 text-slate-400">
+                  <span className="w-2.5 h-2.5 rounded-full bg-slate-500" /> Netral (0.0)
                 </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#059669]" /> Positif (+1.0)
+                <span className="flex items-center gap-1.5 text-emerald-400">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Positif (+1.0)
                 </span>
               </div>
             </div>
 
             {/* Visual Divergence Bars */}
-            <div className="space-y-4 pt-2">
+            <div className="space-y-4">
               {result.media_comparisons.map((media, idx) => {
-                // sentiment_score is between -1.0 and 1.0.
-                // Map to percentage: 0% is -1.0, 50% is 0.0, 100% is +1.0.
                 const clampedScore = Math.max(-1.0, Math.min(1.0, media.sentiment_score || 0))
-                const barWidth = Math.abs(clampedScore) * 50 // width from center
+                const barWidth = Math.abs(clampedScore) * 50
                 const isPositive = clampedScore >= 0
 
                 return (
-                  <div key={idx} className="p-4 rounded-md bg-[#080C14] border border-[#1F2937] space-y-2">
+                  <div
+                    key={idx}
+                    className="p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-3 hover:border-slate-700 transition"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
                       <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded bg-[#182032] text-[#93C5FD] font-semibold border border-[#1E293B]">
+                        <span className="px-2.5 py-0.5 rounded bg-slate-800 text-slate-200 font-bold border border-slate-700">
                           {media.outlet}
                         </span>
-                        <span className="text-[#9CA3AF] italic">
+                        <span className="text-slate-400 italic">
                           Framing: "{media.dominant_frame}"
                         </span>
                       </div>
-                      <span className={`font-semibold ${isPositive ? 'text-[#10B981]' : 'text-[#F43F5E]'}`}>
+                      <span className={`font-bold ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
                         Skor: {clampedScore > 0 ? `+${clampedScore.toFixed(2)}` : clampedScore.toFixed(2)} ({media.sentiment})
                       </span>
                     </div>
 
                     {/* Sentiment Bar Track */}
-                    <div className="relative h-4 bg-[#111827] rounded-full overflow-hidden border border-[#1F2937]">
-                      {/* Center zero mark */}
-                      <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-[#374151] z-10" />
-
-                      {/* Bar fill from center */}
+                    <div className="relative h-4 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                      <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-slate-700 z-10" />
                       {isPositive ? (
                         <div
-                          className="absolute top-0 bottom-0 left-1/2 bg-[#059669] rounded-r-full transition-all duration-500"
+                          className="absolute top-0 bottom-0 left-1/2 bg-emerald-500 rounded-r-full transition-all duration-500 shadow-md"
                           style={{ width: `${barWidth}%` }}
                         />
                       ) : (
                         <div
-                          className="absolute top-0 bottom-0 bg-[#E11D48] rounded-l-full transition-all duration-500"
+                          className="absolute top-0 bottom-0 bg-rose-500 rounded-l-full transition-all duration-500 shadow-md"
                           style={{
                             right: '50%',
                             width: `${barWidth}%`,
@@ -291,16 +300,29 @@ export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, pr
                     </div>
 
                     {/* Headline and facts */}
-                    <div className="pt-1 space-y-1">
-                      <p className="font-editorial text-xs font-semibold text-[#F3F4F6]">
-                        {media.headline}
+                    <div className="pt-1 space-y-2">
+                      <p className="font-editorial text-base font-bold text-slate-100 flex items-start gap-1.5">
+                        <a
+                          href={media.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:text-amber-400 transition flex items-center gap-1.5"
+                        >
+                          <span>{media.headline}</span>
+                          <ExternalLink className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                        </a>
                       </p>
                       {media.selected_facts && media.selected_facts.length > 0 && (
-                        <ul className="text-[11px] text-[#9CA3AF] list-disc list-inside space-y-0.5">
-                          {media.selected_facts.map((fact, fIdx) => (
-                            <li key={fIdx}>{fact}</li>
-                          ))}
-                        </ul>
+                        <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-850">
+                          <span className="text-xs font-mono font-semibold text-slate-400 block mb-1">
+                            Fakta yang Disorot Khusus:
+                          </span>
+                          <ul className="text-xs sm:text-sm text-slate-300 list-disc list-inside space-y-1">
+                            {media.selected_facts.map((fact, fIdx) => (
+                              <li key={fIdx}>{fact}</li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -310,44 +332,44 @@ export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, pr
           </div>
 
           {/* Consensus Facts vs Divergences */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Consensus Core */}
-            <div className="p-5 rounded-lg bg-[#111827] border border-[#10B981]/30 space-y-3">
-              <h4 className="font-editorial text-sm font-bold text-[#10B981] flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-                Fakta Konsensus yang Disepakati Bersama
+            <div className="p-6 rounded-2xl bg-slate-900/80 border border-emerald-500/30 space-y-4 shadow-xl">
+              <h4 className="font-editorial text-base sm:text-lg font-bold text-emerald-400 flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                <span>Fakta Konsensus Seluruh Redaksi</span>
               </h4>
               {result.consensus_facts && result.consensus_facts.length > 0 ? (
-                <ul className="text-xs text-[#D1D5DB] space-y-2">
+                <ul className="text-sm text-slate-200 space-y-2.5">
                   {result.consensus_facts.map((f, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="text-[#10B981] font-bold">•</span>
-                      <span>{f}</span>
+                    <li key={i} className="flex items-start gap-2.5">
+                      <span className="text-emerald-400 font-bold shrink-0 mt-0.5">•</span>
+                      <span className="leading-relaxed">{f}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-xs text-[#9CA3AF]">Tidak ditemukan data konsensus eksplisit.</p>
+                <p className="text-sm text-slate-400">Tidak ditemukan data konsensus eksplisit.</p>
               )}
             </div>
 
             {/* Divergence Pointers */}
-            <div className="p-5 rounded-lg bg-[#111827] border border-[#F59E0B]/30 space-y-3">
-              <h4 className="font-editorial text-sm font-bold text-[#F59E0B] flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-[#F59E0B]" />
-                Titik Perbedaan Narasi & Framing Media
+            <div className="p-6 rounded-2xl bg-slate-900/80 border border-amber-500/30 space-y-4 shadow-xl">
+              <h4 className="font-editorial text-base sm:text-lg font-bold text-amber-400 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+                <span>Titik Perbedaan Narasi Media</span>
               </h4>
               {result.divergences && result.divergences.length > 0 ? (
-                <ul className="text-xs text-[#D1D5DB] space-y-2">
+                <ul className="text-sm text-slate-200 space-y-2.5">
                   {result.divergences.map((d, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="text-[#F59E0B] font-bold">•</span>
-                      <span>{d}</span>
+                    <li key={i} className="flex items-start gap-2.5">
+                      <span className="text-amber-400 font-bold shrink-0 mt-0.5">•</span>
+                      <span className="leading-relaxed">{d}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-xs text-[#9CA3AF]">Tidak ada perbedaan sudut pandang tajam antar-media ini.</p>
+                <p className="text-sm text-slate-400">Tidak ada perbedaan sudut pandang tajam antar-media ini.</p>
               )}
             </div>
           </div>

@@ -613,18 +613,24 @@ func (h *NewsHandler) GetRecentArticles(c *gin.Context) {
 		URL         string    `json:"url"`
 		Summary     string    `json:"summary"`
 		Source      string    `json:"source"`
+		ImageURL    string    `json:"image_url"`
 		PublishedAt time.Time `json:"published_at"`
 		CreatedAt   time.Time `json:"created_at"`
 	}
 
 	res := make([]WireArticleItem, len(articles))
 	for i, a := range articles {
+		artImg := a.ImageURL
+		if artImg == "" {
+			artImg = clustering.ResolveThematicImage(a.Title + " " + a.Summary)
+		}
 		res[i] = WireArticleItem{
 			ID:          a.ID,
 			Title:       a.Title,
 			URL:         a.URL,
 			Summary:     a.Summary,
 			Source:      a.Source,
+			ImageURL:    artImg,
 			PublishedAt: a.PublishedAt,
 			CreatedAt:   a.CreatedAt,
 		}

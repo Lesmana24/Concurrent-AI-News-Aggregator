@@ -56,8 +56,9 @@ type newsService struct {
 }
 
 type ScrapedArticle struct {
-	Title   string
-	Content string
+	Title    string
+	Content  string
+	ImageURL string
 }
 
 // NewNewsService creates a new NewsService with the specified repository and optional AI service.
@@ -301,10 +302,11 @@ func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*mod
 			return res, nil
 		}
 
-		var title, content string
+		var title, content, imageURL string
 		if len(cached) > 0 && strings.TrimSpace(cached[0].Content) != "" {
 			title = cached[0].Title
 			content = cached[0].Content
+			imageURL = cached[0].ImageURL
 		} else {
 			scraped, err := s.scrapeArticle(ctx, url)
 			if err != nil {
@@ -312,6 +314,7 @@ func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*mod
 			}
 			title = scraped.Title
 			content = scraped.Content
+			imageURL = scraped.ImageURL
 		}
 
 		summary, provider, err := s.aiService.Summarize(ctx, content)
@@ -324,6 +327,7 @@ func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*mod
 			URL:         url,
 			Content:     content,
 			Summary:     summary,
+			ImageURL:    imageURL,
 			AIProvider:  provider,
 			PublishedAt: time.Now(),
 		}
@@ -343,10 +347,11 @@ func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*mod
 		}
 
 		res := &models.ArticleResponse{
-			Title:   title,
-			URL:     url,
-			Summary: summary,
-			Source:  provider,
+			Title:    title,
+			URL:      url,
+			Summary:  summary,
+			Source:   provider,
+			ImageURL: imageURL,
 		}
 
 		// Cache in Redis L1
@@ -462,7 +467,19 @@ func (s *newsService) scrapeArticle(ctx context.Context, url string) (*ScrapedAr
 		title = "Summarized Article"
 	}
 
-	// 2. Strip non-content elements
+	// 2. Extract Image URL (OpenGraph / Twitter / Article image)
+	imageURL := strings.TrimSpace(doc.Find(`meta[property="og:image"]`).AttrOr("content", ""))
+	if imageURL == "" {
+		imageURL = strings.TrimSpace(doc.Find(`meta[name="twitter:image"]`).AttrOr("content", ""))
+	}
+	if imageURL == "" {
+		imageURL = strings.TrimSpace(doc.Find(`meta[name="twitter:image:src"]`).AttrOr("content", ""))
+	}
+	if imageURL == "" {
+		imageURL = strings.TrimSpace(doc.Find("article img, .detail-image img, .post-image img, figure img").First().AttrOr("src", ""))
+	}
+
+	// 3. Strip non-content elements
 	doc.Find("script, style, nav, footer, header, aside, noscript, .advertisement, .ads, svg, form").Remove()
 
 	var textBuilder strings.Builder
@@ -484,8 +501,9 @@ func (s *newsService) scrapeArticle(ctx context.Context, url string) (*ScrapedAr
 	}
 
 	return &ScrapedArticle{
-		Title:   title,
-		Content: content,
+		Title:    title,
+		Content:  content,
+		ImageURL: imageURL,
 	}, nil
 }
 

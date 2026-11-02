@@ -4,6 +4,7 @@ export interface Article {
   url: string
   summary: string
   source: string
+  image_url?: string
   published_at?: string
   created_at?: string
 }
@@ -12,6 +13,8 @@ export interface TrendingClusterItem {
   id: number
   title: string
   summary: string
+  image_url?: string
+  secondary_image_url?: string
   article_count: number
   unique_outlets: number
   outlets: string[]
@@ -29,6 +32,8 @@ export interface ClusterDetailResponse {
   id: number
   title: string
   summary: string
+  image_url?: string
+  secondary_image_url?: string
   article_count: number
   unique_outlets: number
   outlets: string[]
@@ -39,6 +44,7 @@ export interface ClusterDetailResponse {
     url: string
     summary: string
     source: string
+    image_url?: string
   }[]
 }
 

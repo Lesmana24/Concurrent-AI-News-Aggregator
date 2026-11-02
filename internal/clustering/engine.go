@@ -128,13 +128,18 @@ func (e *ClusterEngine) Recompute(ctx context.Context) ([]models.TopicCluster, e
 		embeddingsMap = make(map[uint][]float32)
 	}
 
-	// For articles missing vector embeddings, generate on-the-fly via embedSvc
+	// For articles missing vector embeddings, generate on-the-fly via embedSvc (capped to 10 articles to avoid latency)
 	if e.embedSvc != nil {
+		generatedCount := 0
 		for _, a := range articles {
+			if generatedCount >= 10 {
+				break
+			}
 			if len(embeddingsMap[a.ID]) == 0 {
 				textToEmbed := fmt.Sprintf("%s\n\n%s", a.Title, a.Summary)
 				if vec, err := e.embedSvc.GenerateEmbedding(ctx, textToEmbed); err == nil && len(vec) > 0 {
 					embeddingsMap[a.ID] = vec
+					generatedCount++
 				}
 			}
 		}
@@ -148,23 +153,34 @@ func (e *ClusterEngine) Recompute(ctx context.Context) ([]models.TopicCluster, e
 
 		bestIdx := -1
 		var bestSim float32 = -1.0
+		var bestRequiredThreshold float32 = e.cfg.SimilarityThreshold
 
 		for cIdx, c := range clusters {
 			var sim float32
+			var requiredThreshold float32 = e.cfg.SimilarityThreshold
+
 			if len(artVec) > 0 && len(c.centroid) > 0 {
 				sim = cosineSimilarity(artVec, c.centroid)
 			} else {
-				// Text similarity fallback based on title token overlap
-				sim = jaccardSimilarity(art.Title+" "+art.Summary, c.articles[0].Title+" "+c.articles[0].Summary)
+				// Text similarity fallback based on title and summary token overlap
+				// Threshold for Jaccard text overlap is 0.28 (0.78 is only for vector embeddings)
+				requiredThreshold = 0.28
+				for _, existingArt := range c.articles {
+					jSim := jaccardSimilarity(art.Title+" "+art.Summary, existingArt.Title+" "+existingArt.Summary)
+					if jSim > sim {
+						sim = jSim
+					}
+				}
 			}
 
 			if sim > bestSim {
 				bestSim = sim
 				bestIdx = cIdx
+				bestRequiredThreshold = requiredThreshold
 			}
 		}
 
-		if bestIdx >= 0 && bestSim >= e.cfg.SimilarityThreshold {
+		if bestIdx >= 0 && bestSim >= bestRequiredThreshold {
 			// Join existing cluster and update centroid
 			target := &clusters[bestIdx]
 			target.articles = append(target.articles, art)
@@ -178,6 +194,72 @@ func (e *ClusterEngine) Recompute(ctx context.Context) ([]models.TopicCluster, e
 				centroid: artVec,
 			}
 			clusters = append(clusters, newC)
+		}
+	}
+
+	// 2.1 Agglomerative Cluster Consolidation Pass
+	// Merges any overlapping sub-clusters reporting on the same event
+	merged := true
+	for merged {
+		merged = false
+		for i := 0; i < len(clusters); i++ {
+			for j := i + 1; j < len(clusters); j++ {
+				shouldMerge := false
+
+				// Check vector similarity if both centroids exist
+				if len(clusters[i].centroid) > 0 && len(clusters[j].centroid) > 0 {
+					sim := cosineSimilarity(clusters[i].centroid, clusters[j].centroid)
+					if sim >= (e.cfg.SimilarityThreshold - 0.05) {
+						shouldMerge = true
+					}
+				} else {
+					// Check cross-article title and summary overlap between clusters
+					for _, artI := range clusters[i].articles {
+						for _, artJ := range clusters[j].articles {
+							if jaccardSimilarity(artI.Title, artJ.Title) >= 0.30 ||
+								jaccardSimilarity(artI.Title+" "+artI.Summary, artJ.Title+" "+artJ.Summary) >= 0.28 {
+								shouldMerge = true
+								break
+							}
+						}
+						if shouldMerge {
+							break
+						}
+					}
+				}
+
+				if shouldMerge {
+					// Merge cluster j into cluster i
+					clusters[i].articles = append(clusters[i].articles, clusters[j].articles...)
+
+					// Deduplicate articles by URL
+					seenURLs := make(map[string]bool)
+					var uniqueArticles []models.Article
+					for _, a := range clusters[i].articles {
+						if !seenURLs[a.URL] {
+							seenURLs[a.URL] = true
+							uniqueArticles = append(uniqueArticles, a)
+						}
+					}
+					clusters[i].articles = uniqueArticles
+
+					if len(clusters[j].centroid) > 0 {
+						if len(clusters[i].centroid) == 0 {
+							clusters[i].centroid = clusters[j].centroid
+						} else {
+							clusters[i].centroid = updateCentroid(clusters[i].centroid, clusters[j].centroid, 2)
+						}
+					}
+
+					// Remove cluster j
+					clusters = append(clusters[:j], clusters[j+1:]...)
+					merged = true
+					break
+				}
+			}
+			if merged {
+				break
+			}
 		}
 	}
 
@@ -262,15 +344,37 @@ func (e *ClusterEngine) Recompute(ctx context.Context) ([]models.TopicCluster, e
 			}
 		}
 
+		var primaryImg, secondaryImg string
+		for _, a := range c.articles {
+			if a.ImageURL != "" {
+				if primaryImg == "" {
+					primaryImg = a.ImageURL
+				} else if secondaryImg == "" && a.ImageURL != primaryImg {
+					secondaryImg = a.ImageURL
+					break
+				}
+			}
+		}
+
+		combinedText := title + " " + summary
+		if primaryImg == "" {
+			primaryImg = ResolveThematicImage(combinedText)
+		}
+		if secondaryImg == "" && len(c.articles) > 1 {
+			secondaryImg = ResolveSecondaryThematicImage(combinedText)
+		}
+
 		topicCluster := models.TopicCluster{
-			Title:           title,
-			Summary:         summary,
-			ArticleCount:    len(c.articles),
-			UniqueOutlets:   uniqueOutlets,
-			Outlets:         strings.Join(outletList, ", "),
-			HotnessScore:    hotness,
-			LastArticleTime: latestTime,
-			Articles:        c.articles,
+			Title:             title,
+			Summary:           summary,
+			ImageURL:          primaryImg,
+			SecondaryImageURL: secondaryImg,
+			ArticleCount:      len(c.articles),
+			UniqueOutlets:     uniqueOutlets,
+			Outlets:           strings.Join(outletList, ", "),
+			HotnessScore:      hotness,
+			LastArticleTime:   latestTime,
+			Articles:          c.articles,
 		}
 
 		resultClusters = append(resultClusters, topicCluster)
@@ -327,15 +431,27 @@ func (e *ClusterEngine) GetTrending(ctx context.Context, limit int) ([]models.Tr
 				outlets = append(outlets, strings.TrimSpace(o))
 			}
 		}
+
+		img := c.ImageURL
+		if img == "" {
+			img = ResolveThematicImage(c.Title + " " + c.Summary)
+		}
+		secImg := c.SecondaryImageURL
+		if secImg == "" && c.ArticleCount > 1 {
+			secImg = ResolveSecondaryThematicImage(c.Title + " " + c.Summary)
+		}
+
 		items[i] = models.TrendingClusterItem{
-			ID:            c.ID,
-			Title:         c.Title,
-			Summary:       c.Summary,
-			ArticleCount:  c.ArticleCount,
-			UniqueOutlets: c.UniqueOutlets,
-			Outlets:       outlets,
-			HotnessScore:  c.HotnessScore,
-			LastUpdated:   c.LastArticleTime,
+			ID:                c.ID,
+			Title:             c.Title,
+			Summary:           c.Summary,
+			ImageURL:          img,
+			SecondaryImageURL: secImg,
+			ArticleCount:      c.ArticleCount,
+			UniqueOutlets:     c.UniqueOutlets,
+			Outlets:           outlets,
+			HotnessScore:      c.HotnessScore,
+			LastUpdated:       c.LastArticleTime,
 		}
 	}
 
@@ -359,26 +475,42 @@ func (e *ClusterEngine) GetClusterDetail(ctx context.Context, id uint) (*models.
 		}
 	}
 
+	img := cluster.ImageURL
+	if img == "" {
+		img = ResolveThematicImage(cluster.Title + " " + cluster.Summary)
+	}
+	secImg := cluster.SecondaryImageURL
+	if secImg == "" && cluster.ArticleCount > 1 {
+		secImg = ResolveSecondaryThematicImage(cluster.Title + " " + cluster.Summary)
+	}
+
 	articles := make([]models.ArticleResponse, len(cluster.Articles))
 	for i, a := range cluster.Articles {
+		artImg := a.ImageURL
+		if artImg == "" {
+			artImg = ResolveThematicImage(a.Title + " " + a.Summary)
+		}
 		articles[i] = models.ArticleResponse{
-			Title:   a.Title,
-			URL:     a.URL,
-			Summary: a.Summary,
-			Source:  a.Source,
+			Title:    a.Title,
+			URL:      a.URL,
+			Summary:  a.Summary,
+			Source:   a.Source,
+			ImageURL: artImg,
 		}
 	}
 
 	return &models.ClusterDetailResponse{
-		ID:            cluster.ID,
-		Title:         cluster.Title,
-		Summary:       cluster.Summary,
-		ArticleCount:  cluster.ArticleCount,
-		UniqueOutlets: cluster.UniqueOutlets,
-		Outlets:       outlets,
-		HotnessScore:  cluster.HotnessScore,
-		LastUpdated:   cluster.LastArticleTime,
-		Articles:      articles,
+		ID:                cluster.ID,
+		Title:             cluster.Title,
+		Summary:           cluster.Summary,
+		ImageURL:          img,
+		SecondaryImageURL: secImg,
+		ArticleCount:      cluster.ArticleCount,
+		UniqueOutlets:     cluster.UniqueOutlets,
+		Outlets:           outlets,
+		HotnessScore:      cluster.HotnessScore,
+		LastUpdated:       cluster.LastArticleTime,
+		Articles:          articles,
 	}, nil
 }
 
@@ -477,6 +609,46 @@ func extractOutletFromURL(u string) string {
 		return "Tempo"
 	default:
 		return "Media Nasional"
+	}
+}
+
+func ResolveThematicImage(text string) string {
+	lower := strings.ToLower(text)
+	switch {
+	case strings.Contains(lower, "ekonomi") || strings.Contains(lower, "inflasi") || strings.Contains(lower, "rupiah") || strings.Contains(lower, "saham") || strings.Contains(lower, "ihsg") || strings.Contains(lower, "pajak") || strings.Contains(lower, "anggaran"):
+		return "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=800&q=80"
+	case strings.Contains(lower, "energi") || strings.Contains(lower, "minyak") || strings.Contains(lower, "batu bara") || strings.Contains(lower, "listrik") || strings.Contains(lower, "bbm") || strings.Contains(lower, "pertamina"):
+		return "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=800&q=80"
+	case strings.Contains(lower, "politik") || strings.Contains(lower, "dpr") || strings.Contains(lower, "presiden") || strings.Contains(lower, "pemilu") || strings.Contains(lower, "pilkada") || strings.Contains(lower, "mk") || strings.Contains(lower, "hukum") || strings.Contains(lower, "kpk") || strings.Contains(lower, "gibran"):
+		return "https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=800&q=80"
+	case strings.Contains(lower, "pangan") || strings.Contains(lower, "beras") || strings.Contains(lower, "pertanian") || strings.Contains(lower, "panen") || strings.Contains(lower, "petani"):
+		return "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=800&q=80"
+	case strings.Contains(lower, "teknologi") || strings.Contains(lower, "ai") || strings.Contains(lower, "digital") || strings.Contains(lower, "cyber") || strings.Contains(lower, "gadget"):
+		return "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80"
+	case strings.Contains(lower, "ikn") || strings.Contains(lower, "nusantara") || strings.Contains(lower, "infrastruktur") || strings.Contains(lower, "konstruksi") || strings.Contains(lower, "jalan tol"):
+		return "https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=800&q=80"
+	case strings.Contains(lower, "bencana") || strings.Contains(lower, "banjir") || strings.Contains(lower, "gempa") || strings.Contains(lower, "gunung") || strings.Contains(lower, "cuaca"):
+		return "https://images.unsplash.com/photo-1527482797697-8795b05a13fe?auto=format&fit=crop&w=800&q=80"
+	default:
+		return "https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=800&q=80"
+	}
+}
+
+func ResolveSecondaryThematicImage(text string) string {
+	lower := strings.ToLower(text)
+	switch {
+	case strings.Contains(lower, "ekonomi") || strings.Contains(lower, "inflasi") || strings.Contains(lower, "rupiah") || strings.Contains(lower, "saham") || strings.Contains(lower, "ihsg"):
+		return "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?auto=format&fit=crop&w=800&q=80"
+	case strings.Contains(lower, "energi") || strings.Contains(lower, "minyak") || strings.Contains(lower, "bbm") || strings.Contains(lower, "pertamina"):
+		return "https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?auto=format&fit=crop&w=800&q=80"
+	case strings.Contains(lower, "politik") || strings.Contains(lower, "presiden") || strings.Contains(lower, "dpr") || strings.Contains(lower, "mk") || strings.Contains(lower, "gibran"):
+		return "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=800&q=80"
+	case strings.Contains(lower, "pangan") || strings.Contains(lower, "beras") || strings.Contains(lower, "pertanian"):
+		return "https://images.unsplash.com/photo-1586771107445-d3ca888129ff?auto=format&fit=crop&w=800&q=80"
+	case strings.Contains(lower, "teknologi") || strings.Contains(lower, "ai") || strings.Contains(lower, "digital"):
+		return "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=800&q=80"
+	default:
+		return "https://images.unsplash.com/photo-1495020689067-958852a7765e?auto=format&fit=crop&w=800&q=80"
 	}
 }
 

@@ -20,6 +20,7 @@ type Article struct {
 	Content     string    `gorm:"type:text" json:"content"`
 	URL         string    `gorm:"uniqueIndex;not null" json:"url"`
 	Source      string    `gorm:"index" json:"source"`
+	ImageURL    string    `gorm:"type:text;column:image_url" json:"image_url"`
 	AIProvider  string    `gorm:"column:ai_provider" json:"ai_provider"`
 	PublishedAt time.Time `json:"published_at"`
 	Summary     string    `gorm:"type:text" json:"summary"`
@@ -42,8 +43,9 @@ type UserResponse struct {
 }
 
 type ArticleResponse struct {
-	Title   string `json:"title"`
-	URL     string `json:"url"`
-	Summary string `json:"summary"`
-	Source  string `json:"source"`
+	Title    string `json:"title"`
+	URL      string `json:"url"`
+	Summary  string `json:"summary"`
+	Source   string `json:"source"`
+	ImageURL string `json:"image_url"`
 }

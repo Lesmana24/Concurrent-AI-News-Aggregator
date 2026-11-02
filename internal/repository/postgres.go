@@ -521,20 +521,21 @@ func (r *PostgresRepository) GetArticleEmbeddings(ctx context.Context, articleID
 	return res, nil
 }
 
-// SaveClusters safely replaces or updates topic clusters and their article relationships.
+// SaveClusters atomically updates active topic clusters and replaces old snapshots.
 func (r *PostgresRepository) SaveClusters(ctx context.Context, clusters []models.TopicCluster) error {
 	if len(clusters) == 0 {
 		return nil
 	}
 
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Clean up existing clusters older than 3 days
-		cutoff := time.Now().Add(-72 * time.Hour)
-		_ = tx.Exec("DELETE FROM topic_clusters WHERE created_at < ?", cutoff).Error
+		// Clean up existing clusters and associations to replace with the fresh authoritative snapshot
+		_ = tx.Exec("DELETE FROM cluster_articles").Error
+		_ = tx.Exec("DELETE FROM topic_clusters").Error
 
-		// Insert or update new clusters
+		// Insert new authoritative clusters
 		for i := range clusters {
-			if err := tx.Save(&clusters[i]).Error; err != nil {
+			clusters[i].ID = 0
+			if err := tx.Create(&clusters[i]).Error; err != nil {
 				return err
 			}
 			// Replace association
