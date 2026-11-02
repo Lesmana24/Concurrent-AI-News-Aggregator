@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"news-aggregator/internal/cache"
+	"news-aggregator/internal/crawler"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/service"
 	"strconv"
@@ -16,9 +17,10 @@ import (
 )
 
 type NewsHandler struct {
-	service  service.NewsService
-	db       *gorm.DB
-	cacheSvc cache.CacheService
+	service       service.NewsService
+	db            *gorm.DB
+	cacheSvc      cache.CacheService
+	crawlerEngine *crawler.HarvesterEngine
 }
 
 func NewNewsHandler(s service.NewsService, dbs ...*gorm.DB) *NewsHandler {
@@ -31,6 +33,11 @@ func NewNewsHandler(s service.NewsService, dbs ...*gorm.DB) *NewsHandler {
 
 func (h *NewsHandler) WithCache(c cache.CacheService) *NewsHandler {
 	h.cacheSvc = c
+	return h
+}
+
+func (h *NewsHandler) WithCrawler(e *crawler.HarvesterEngine) *NewsHandler {
+	h.crawlerEngine = e
 	return h
 }
 
@@ -277,7 +284,6 @@ func (h *NewsHandler) GlobalQA(c *gin.Context) {
 	c.JSON(http.StatusOK, res)
 }
 
-
 // Compare godoc
 // @Summary      Compare multiple news articles for media bias and framing analysis
 // @Description  Analyzes 2 to 5 news articles on the same topic from different outlets, reporting sentiment, framing bias, consensus facts, and discrepancies.
@@ -315,4 +321,53 @@ func (h *NewsHandler) Compare(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, res)
+}
+
+// TriggerCrawler godoc
+// @Summary      Manually trigger news crawler ingestion
+// @Description  Triggers an on-demand crawl across all enabled RSS/Atom feeds, deduplicating, summarizing, and indexing new articles.
+// @Tags         Crawler
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Success      200 {object} crawler.CrawlResult "Crawl execution result"
+// @Failure      401 {object} map[string]string "API Key missing or invalid"
+// @Failure      409 {object} map[string]string "Crawler is already running"
+// @Failure      500 {object} map[string]string "Crawler engine error"
+// @Failure      503 {object} map[string]string "Crawler engine is not configured"
+// @Router       /api/v1/crawler/trigger [post]
+func (h *NewsHandler) TriggerCrawler(c *gin.Context) {
+	if h.crawlerEngine == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Crawler engine is not configured"})
+		return
+	}
+
+	result, err := h.crawlerEngine.CrawlAll(c.Request.Context())
+	if err != nil {
+		if strings.Contains(err.Error(), "already running") {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// GetCrawlerStatus godoc
+// @Summary      Get news crawler status and execution statistics
+// @Description  Returns cumulative harvesting statistics including total runs, indexed articles, skipped count, and running state.
+// @Tags         Crawler
+// @Produce      json
+// @Success      200 {object} crawler.CrawlStats "Current crawler status and statistics"
+// @Failure      503 {object} map[string]string "Crawler engine is not configured"
+// @Router       /api/v1/crawler/status [get]
+func (h *NewsHandler) GetCrawlerStatus(c *gin.Context) {
+	if h.crawlerEngine == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Crawler engine is not configured"})
+		return
+	}
+
+	stats := h.crawlerEngine.GetStats()
+	c.JSON(http.StatusOK, stats)
 }

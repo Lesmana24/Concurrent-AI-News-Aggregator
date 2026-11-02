@@ -12,6 +12,7 @@ import (
 	_ "news-aggregator/docs"
 	"news-aggregator/internal/ai"
 	"news-aggregator/internal/cache"
+	"news-aggregator/internal/crawler"
 	deliveryHttp "news-aggregator/internal/delivery/http"
 	"news-aggregator/internal/middleware"
 	"news-aggregator/internal/models"
@@ -29,35 +30,25 @@ import (
 
 // @title           Concurrent AI News Aggregator API
 // @version         1.0
-// @description     High-performance Concurrent AI News Aggregator backend in Go with web scraping, parallel LLM summarization, and strict guardrail News Q&A.
-// @termsOfService  https://github.com/Lesmana24/Concurrent-AI-News-Aggregator
-
-// @contact.name    API Support
-// @contact.url     https://github.com/Lesmana24/Concurrent-AI-News-Aggregator
-
-// @license.name    MIT
-// @license.url     https://opensource.org/licenses/MIT
-
+// @description     High-performance production API in Go that concurrently summarizes news articles with real-time web scraping, multi-provider AI resilience (Groq/NVIDIA/Gemini), Server-Sent Events (SSE) streaming Q&A, pgvector semantic search, and media bias comparative analysis.
 // @host            localhost:8080
 // @BasePath        /
-
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
 // @name X-API-KEY
-// @description Personal API key for authentication and quota management
 func main() {
-	// Initialize Structured JSON Logger (slog)
+	// Initialize Structured Logger
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
 	slog.SetDefault(logger)
 
-	// Load .env
+	// Load Environment Variables
 	if err := godotenv.Load(); err != nil {
-		slog.Info("No .env file found, using system environment variables")
+		slog.Warn("No .env file found, reading from system environment variables")
 	}
 
-	// DB Connection
+	// Database Connection
 	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
 		os.Getenv("DB_HOST"), os.Getenv("DB_USER"), os.Getenv("DB_PASSWORD"), os.Getenv("DB_NAME"), os.Getenv("DB_PORT"))
 
@@ -67,21 +58,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	// AutoMigrate
-	err = db.AutoMigrate(&models.User{}, &models.Article{}, &models.TelegramSubscription{})
-	if err != nil {
-		slog.Error("Database migration failed", slog.String("error", err.Error()))
+	// Auto-Migrate Core Schemas
+	if err := db.AutoMigrate(
+		&models.User{},
+		&models.Article{},
+		&models.TelegramSubscription{},
+	); err != nil {
+		slog.Error("Database schema migration failed", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 
-	// Initialize Repository
+	// Initialize Postgres Repository
 	repo := repository.NewPostgresRepository(db)
 
-	// Initialize Redis L1 Cache (Graceful fallback to PostgreSQL L2 if unreachable)
+	// Initialize L1 Redis Distributed Cache with Graceful Fallback
 	redisHost := os.Getenv("REDIS_HOST")
 	redisPort := os.Getenv("REDIS_PORT")
-	redisPassword := os.Getenv("REDIS_PASSWORD")
-	redisCache := cache.NewRedisCache(redisHost, redisPort, redisPassword)
+	redisPass := os.Getenv("REDIS_PASSWORD")
+	redisCache := cache.NewRedisCache(redisHost, redisPort, redisPass)
 	defer redisCache.Close()
 
 	// Initialize AI Service (Groq -> NVIDIA NIM -> Google AI Studio -> Local-Fallback)
@@ -89,6 +83,29 @@ func main() {
 
 	// Initialize Service with L1 Cache
 	svc := service.NewNewsService(repo, aiService).WithCache(redisCache)
+
+	// Initialize Autonomous News Harvester Engine
+	crawlerEnabled := strings.EqualFold(os.Getenv("CRAWLER_ENABLED"), "true")
+	crawlerInterval, _ := strconv.Atoi(os.Getenv("CRAWLER_INTERVAL_MINUTES"))
+	if crawlerInterval <= 0 {
+		crawlerInterval = 15
+	}
+	crawlerMax, _ := strconv.Atoi(os.Getenv("CRAWLER_MAX_PER_FEED"))
+	if crawlerMax <= 0 {
+		crawlerMax = 3
+	}
+
+	harvester := crawler.NewHarvesterEngine(crawler.Config{
+		Interval:   time.Duration(crawlerInterval) * time.Minute,
+		MaxPerFeed: crawlerMax,
+		Timeout:    30 * time.Second,
+		Enabled:    crawlerEnabled,
+		Sources:    crawler.DefaultSources(),
+	}, svc, repo)
+
+	if crawlerEnabled {
+		go harvester.Start(context.Background())
+	}
 
 	// Initialize Telegram Bot Service (Two-Way Interactive Chat & Push Notifications)
 	telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN")
@@ -98,6 +115,7 @@ func main() {
 			for attempt := 1; attempt <= 10; attempt++ {
 				telegramBot, err := telegram.NewBotService(telegramToken, svc, repo)
 				if err == nil && telegramBot.IsEnabled() {
+					telegramBot.WithCrawler(harvester)
 					telegramBot.Start(context.Background())
 					slog.Info("Telegram Bot active and listening for messages", slog.Int("attempt", attempt))
 					return
@@ -113,7 +131,7 @@ func main() {
 	}
 
 	// Initialize Handler with DB and Redis references for live health checks
-	handler := deliveryHttp.NewNewsHandler(svc, db).WithCache(redisCache)
+	handler := deliveryHttp.NewNewsHandler(svc, db).WithCache(redisCache).WithCrawler(harvester)
 
 	// Gin Engine with Structured Logging & Request-ID Middleware
 	r := gin.New()
@@ -132,6 +150,7 @@ func main() {
 	{
 		api.GET("/health", handler.Health)
 		api.GET("/news/search", handler.SemanticSearch)
+		api.GET("/crawler/status", handler.GetCrawlerStatus)
 
 		// Protected routes
 		protected := api.Group("/")
@@ -146,6 +165,7 @@ func main() {
 			protected.POST("/news/qa/global", handler.GlobalQA)
 			protected.POST("/news/compare", handler.Compare)
 			protected.POST("/compare", handler.Compare)
+			protected.POST("/crawler/trigger", handler.TriggerCrawler)
 		}
 	}
 

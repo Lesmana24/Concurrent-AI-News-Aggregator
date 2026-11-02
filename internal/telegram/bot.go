@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"news-aggregator/internal/crawler"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/repository"
 	"news-aggregator/internal/service"
@@ -22,6 +23,7 @@ type BotService struct {
 	bot          *tgbotapi.BotAPI
 	newsService  service.NewsService
 	repo         *repository.PostgresRepository
+	crawler      *crawler.HarvesterEngine
 	systemAPIKey string
 	enabled      bool
 }
@@ -53,6 +55,12 @@ func NewBotService(token string, newsSvc service.NewsService, repo *repository.P
 		systemAPIKey: systemKey,
 		enabled:      true,
 	}, nil
+}
+
+// WithCrawler injects the HarvesterEngine reference to allow /sync command.
+func (b *BotService) WithCrawler(c *crawler.HarvesterEngine) *BotService {
+	b.crawler = c
+	return b
 }
 
 // IsEnabled returns true if the Telegram bot service is active.
@@ -138,6 +146,7 @@ Saya adalah asisten AI berita cerdas berbasis <b>Concurrent AI News Aggregator</
 ✨ <b>Fitur yang dapat Anda gunakan langsung:</b>
 • 💬 <b>Tanya Bebas:</b> Ketik pertanyaan seputar berita apa saja (contoh: <i>"Apa saja persiapan pengamanan demo di Jakarta?"</i>)
 • 📰 <b>Ringkas Link Berita:</b> Tempelkan langsung tautan artikel berita apa saja
+• 🔄 <b>/sync:</b> Sinkronisasi dan arsipkan berita terkini otomatis dari Antara, CNN, CNBC, dll.
 • 🔍 <b>/search &lt;topik&gt;:</b> Cari arsip berita berbasis kesamaan makna semantik (pgvector)
 • ⚖️ <b>/compare &lt;url1&gt; &lt;url2&gt;:</b> Analisis perbandingan sudut pandang & sentimen media
 • ☀️ <b>/briefing:</b> Dapatkan rangkuman intisari berita utama saat ini
@@ -147,6 +156,28 @@ Saya adalah asisten AI berita cerdas berbasis <b>Concurrent AI News Aggregator</
 			html.EscapeString(b.bot.Self.UserName),
 		)
 		b.sendMessage(chatID, reply)
+
+	case "sync", "crawl":
+		if b.crawler == nil {
+			b.sendMessage(chatID, "⚠️ <b>Fitur sinkronisasi berita belum diaktifkan.</b>")
+			return
+		}
+		b.sendMessage(chatID, "⏳ <i>Sedang mengambil dan mengindeks berita terbaru dari berbagai media terkemuka...</i>")
+		go func() {
+			res, err := b.crawler.CrawlAll(context.Background())
+			if err != nil {
+				b.sendMessage(chatID, fmt.Sprintf("❌ <b>Gagal sinkronisasi:</b> %s", html.EscapeString(err.Error())))
+				return
+			}
+			msg := fmt.Sprintf("✅ <b>Sinkronisasi Berita Selesai!</b>\n\n"+
+				"📥 <b>Berita Diperiksa:</b> %d artikel\n"+
+				"🆕 <b>Berita Baru Diarsip:</b> %d artikel\n"+
+				"⏭️ <b>Dilewati (Sudah Ada):</b> %d artikel\n"+
+				"⏱️ <b>Waktu Proses:</b> %s\n\n"+
+				"💡 <i>Gunakan <code>/search &lt;kata kunci&gt;</code> atau ajukan pertanyaan bebas seputar berita tersebut langsung di sini!</i>",
+				res.Fetched, res.Indexed, res.Skipped, res.Duration.Round(time.Millisecond))
+			b.sendMessage(chatID, msg)
+		}()
 
 	case "search":
 		if args == "" {
@@ -241,7 +272,7 @@ func (b *BotService) handleGlobalQA(ctx context.Context, chatID int64, question 
 			))
 		}
 	} else {
-		sb.WriteString("\n💡 <i>Tips: Tempelkan (paste) tautan berita terkait (Kompas, Detik, dll.) ke chat ini agar bot dapat membaca dan mengarsipkannya, sehingga Anda bisa menanyakannya secara detail!</i>\n")
+		sb.WriteString("\n💡 <i>Tips: Tempelkan (paste) tautan berita terkait (Kompas, Detik, dll.) atau ketik <code>/sync</code> untuk mengarsipkan berita terbaru secara otomatis!</i>\n")
 	}
 
 	sb.WriteString(fmt.Sprintf("\n<i>Penyedia AI: %s</i>", html.EscapeString(resp.Provider)))
@@ -256,7 +287,7 @@ func (b *BotService) handleSearch(ctx context.Context, chatID int64, query strin
 	}
 
 	if len(results) == 0 {
-		b.sendMessage(chatID, "🔍 <b>Tidak ditemukan artikel yang cocok di arsip berita.</b>\n\n💡 <i>Tips: Belum ada berita mengenai topik ini di database. Silakan tempelkan (paste) link berita langsung ke chat ini, dan bot akan otomatis membaca, merangkum, serta menyimpannya ke arsip semantik!</i>")
+		b.sendMessage(chatID, "🔍 <b>Tidak ditemukan artikel yang cocok di arsip berita.</b>\n\n💡 <i>Tips: Ketik <code>/sync</code> untuk mengarsipkan berita terkini dari berbagai media atau tempelkan link berita langsung ke chat ini!</i>")
 		return
 	}
 

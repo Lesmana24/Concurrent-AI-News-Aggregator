@@ -157,37 +157,97 @@ func (r *PostgresRepository) SearchSimilarArticles(ctx context.Context, queryVec
 	return results, err
 }
 
-// SearchArticlesByKeyword searches articles in PostgreSQL using ILIKE keywords as a fallback.
+var idStopWords = map[string]struct{}{
+	"apa": {}, "siapa": {}, "kapan": {}, "dimana": {}, "dmana": {}, "bagaimana": {}, "bgmn": {},
+	"mengapa": {}, "kenapa": {}, "knp": {}, "apakah": {}, "berita": {}, "kabar": {}, "terbaru": {},
+	"tentang": {}, "ttg": {}, "mengenai": {}, "seputar": {}, "terkait": {}, "adalah": {}, "yaitu": {},
+	"atau": {}, "dan": {}, "yang": {}, "yg": {}, "ini": {}, "itu": {}, "dari": {}, "pada": {},
+	"untuk": {}, "utk": {}, "bisa": {}, "ada": {}, "oleh": {}, "para": {}, "hari": {}, "kemarin": {},
+	"besok": {}, "lalu": {}, "info": {}, "informasi": {}, "tolong": {}, "coba": {}, "jelaskan": {},
+	"dong": {}, "saja": {}, "kah": {}, "lah": {}, "pun": {},
+}
+
+// SearchArticlesByKeyword searches articles in PostgreSQL using smart keyword matching as a fallback.
 func (r *PostgresRepository) SearchArticlesByKeyword(ctx context.Context, query string, limit int) ([]models.SemanticSearchResult, error) {
 	if limit <= 0 {
 		limit = 5
 	}
-	rawWords := strings.Fields(strings.ToLower(strings.TrimSpace(query)))
+
+	// Clean punctuation from query
+	cleanQuery := strings.Map(func(r rune) rune {
+		if strings.ContainsRune("?!.,:;()[]\"'{}<>/\\|@#$%^&*~`+=_-", r) {
+			return ' '
+		}
+		return r
+	}, strings.ToLower(strings.TrimSpace(query)))
+
+	rawWords := strings.Fields(cleanQuery)
 	if len(rawWords) == 0 {
 		return nil, nil
 	}
 
-	// Filter out short stop words (e.g. "di", "ke", "dan", "yang") if multiple words exist
-	var words []string
+	// Filter out Indonesian stop words and short particles
+	var meaningfulWords []string
 	for _, w := range rawWords {
-		if len(w) > 2 || len(rawWords) == 1 {
-			words = append(words, w)
+		if _, isStop := idStopWords[w]; !isStop && len(w) >= 3 {
+			meaningfulWords = append(meaningfulWords, w)
+			// Add common Indonesian root/stem variants (e.g., demonstrasi / demonstran -> demo)
+			if strings.HasPrefix(w, "demonstra") {
+				meaningfulWords = append(meaningfulWords, "demo")
+			}
 		}
 	}
-	if len(words) == 0 {
-		words = rawWords
+
+	// If everything was stripped by stop words, retain words with length >= 3, or original words
+	if len(meaningfulWords) == 0 {
+		for _, w := range rawWords {
+			if len(w) >= 3 {
+				meaningfulWords = append(meaningfulWords, w)
+			}
+		}
+	}
+	if len(meaningfulWords) == 0 {
+		meaningfulWords = rawWords
 	}
 
 	var articles []models.Article
-	q := r.db.WithContext(ctx).Model(&models.Article{})
-	for _, w := range words {
-		pattern := "%" + w + "%"
-		q = q.Where("LOWER(title) LIKE ? OR LOWER(summary) LIKE ?", pattern, pattern)
+
+	// Strategy 1: Attempt strict AND match across all meaningful words
+	if len(meaningfulWords) > 1 {
+		qAnd := r.db.WithContext(ctx).Model(&models.Article{})
+		for _, w := range meaningfulWords {
+			pattern := "%" + w + "%"
+			qAnd = qAnd.Where("LOWER(title) LIKE ? OR LOWER(summary) LIKE ?", pattern, pattern)
+		}
+		_ = qAnd.Order("id DESC").Limit(limit).Find(&articles).Error
 	}
 
-	err := q.Order("id DESC").Limit(limit).Find(&articles).Error
-	if err != nil {
-		return nil, err
+	// Strategy 2: If strict match found nothing or single keyword, search with OR
+	if len(articles) == 0 {
+		var orConditions []string
+		var orArgs []interface{}
+		for _, w := range meaningfulWords {
+			pattern := "%" + w + "%"
+			orConditions = append(orConditions, "LOWER(title) LIKE ? OR LOWER(summary) LIKE ?")
+			orArgs = append(orArgs, pattern, pattern)
+		}
+
+		if len(orConditions) > 0 {
+			clause := strings.Join(orConditions, " OR ")
+			_ = r.db.WithContext(ctx).Model(&models.Article{}).
+				Where(clause, orArgs...).
+				Order("id DESC").
+				Limit(limit).
+				Find(&articles).Error
+		}
+	}
+
+	// Strategy 3: If still empty (e.g. generic query), return latest articles
+	if len(articles) == 0 {
+		_ = r.db.WithContext(ctx).Model(&models.Article{}).
+			Order("id DESC").
+			Limit(limit).
+			Find(&articles).Error
 	}
 
 	results := make([]models.SemanticSearchResult, len(articles))

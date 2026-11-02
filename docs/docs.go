@@ -9,20 +9,102 @@ const docTemplate = `{
     "info": {
         "description": "{{escape .Description}}",
         "title": "{{.Title}}",
-        "termsOfService": "https://github.com/Lesmana24/Concurrent-AI-News-Aggregator",
-        "contact": {
-            "name": "API Support",
-            "url": "https://github.com/Lesmana24/Concurrent-AI-News-Aggregator"
-        },
-        "license": {
-            "name": "MIT",
-            "url": "https://opensource.org/licenses/MIT"
-        },
+        "contact": {},
         "version": "{{.Version}}"
     },
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/crawler/status": {
+            "get": {
+                "description": "Returns cumulative harvesting statistics including total runs, indexed articles, skipped count, and running state.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Crawler"
+                ],
+                "summary": "Get news crawler status and execution statistics",
+                "responses": {
+                    "200": {
+                        "description": "Current crawler status and statistics",
+                        "schema": {
+                            "$ref": "#/definitions/crawler.CrawlStats"
+                        }
+                    },
+                    "503": {
+                        "description": "Crawler engine is not configured",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/crawler/trigger": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Triggers an on-demand crawl across all enabled RSS/Atom feeds, deduplicating, summarizing, and indexing new articles.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Crawler"
+                ],
+                "summary": "Manually trigger news crawler ingestion",
+                "responses": {
+                    "200": {
+                        "description": "Crawl execution result",
+                        "schema": {
+                            "$ref": "#/definitions/crawler.CrawlResult"
+                        }
+                    },
+                    "401": {
+                        "description": "API Key missing or invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Crawler is already running",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Crawler engine error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Crawler engine is not configured",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/health": {
             "get": {
                 "description": "Returns the operational status of the service, database connectivity, and timestamp.",
@@ -562,6 +644,64 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "crawler.CrawlResult": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "integer"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "fetched": {
+                    "type": "integer"
+                },
+                "indexed": {
+                    "type": "integer"
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "start_time": {
+                    "type": "string"
+                }
+            }
+        },
+        "crawler.CrawlStats": {
+            "type": "object",
+            "properties": {
+                "active_feed_count": {
+                    "type": "integer"
+                },
+                "is_running": {
+                    "type": "boolean"
+                },
+                "last_duration_ms": {
+                    "type": "integer"
+                },
+                "last_run_time": {
+                    "type": "string"
+                },
+                "total_errors": {
+                    "type": "integer"
+                },
+                "total_fetched": {
+                    "type": "integer"
+                },
+                "total_indexed": {
+                    "type": "integer"
+                },
+                "total_runs": {
+                    "type": "integer"
+                },
+                "total_skipped": {
+                    "type": "integer"
+                }
+            }
+        },
         "models.ArticleResponse": {
             "type": "object",
             "properties": {
@@ -772,7 +912,6 @@ const docTemplate = `{
     },
     "securityDefinitions": {
         "ApiKeyAuth": {
-            "description": "Personal API key for authentication and quota management",
             "type": "apiKey",
             "name": "X-API-KEY",
             "in": "header"
@@ -787,7 +926,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Concurrent AI News Aggregator API",
-	Description:      "High-performance Concurrent AI News Aggregator backend in Go with web scraping, parallel LLM summarization, and strict guardrail News Q&A.",
+	Description:      "High-performance production API in Go that concurrently summarizes news articles with real-time web scraping, multi-provider AI resilience (Groq/NVIDIA/Gemini), Server-Sent Events (SSE) streaming Q&A, pgvector semantic search, and media bias comparative analysis.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",
