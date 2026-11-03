@@ -16,6 +16,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  X,
 } from 'lucide-react'
 import type { TabType } from './Navigation'
 import type { ThemeMode } from './ThemeToggle'
@@ -243,14 +244,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-start justify-center pt-12 sm:pt-20 px-3 sm:px-4 animate-in fade-in duration-150">
+    <div 
+      onClick={onClose}
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-start justify-center pt-8 sm:pt-20 px-3 sm:px-4 animate-in fade-in duration-150 cursor-pointer"
+    >
       <div
-        className="w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] divide-y divide-slate-200 dark:divide-slate-800 text-slate-900 dark:text-slate-100"
+        className="w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[80vh] divide-y divide-slate-200 dark:divide-slate-800 text-slate-900 dark:text-slate-100 cursor-default"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Search Input Bar */}
-        <div className="relative flex items-center px-4 py-3.5 bg-slate-50 dark:bg-slate-950/70">
-          <Search className="w-5 h-5 text-amber-500 shrink-0 mr-3" />
+        {/* Search Input Bar with Mobile-Friendly Dismiss */}
+        <div className="relative flex items-center px-3.5 sm:px-4 py-3 sm:py-3.5 bg-slate-50 dark:bg-slate-950/70 gap-2">
+          <Search className="w-5 h-5 text-amber-500 shrink-0" />
           <input
             ref={inputRef}
             type="text"
@@ -269,7 +273,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 setSelectedIndex(0)
                 inputRef.current?.focus()
               }}
-              className="text-xs font-mono text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 shrink-0 mr-2 cursor-pointer"
+              className="text-xs font-mono text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 shrink-0 cursor-pointer"
             >
               Hapus
             </button>
@@ -277,6 +281,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 shrink-0">
             <kbd>ESC</kbd>
           </span>
+
+          {/* Universal Close Button (Essential for Mobile touch screens) */}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Tutup menu pencarian"
+            title="Tutup (Esc)"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-100 hover:bg-slate-200/80 dark:hover:bg-slate-800 transition shrink-0 cursor-pointer min-h-[38px] min-w-[38px] flex items-center justify-center border border-transparent hover:border-slate-300 dark:hover:border-slate-700"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Results List */}
@@ -344,9 +359,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           )}
         </div>
 
-        {/* Footer Shortcut Legend */}
+        {/* Footer Shortcut Legend & Mobile Action */}
         <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950/90 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
-          <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-3">
             <span className="flex items-center gap-1">
               <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300">↑↓</kbd> Navigasi
             </span>
@@ -354,8 +369,19 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300">↵</kbd> Jalankan
             </span>
           </div>
+
+          {/* Mobile Tap Dismiss Button */}
+          <button
+            type="button"
+            onClick={onClose}
+            className="sm:hidden text-amber-700 dark:text-amber-400 font-bold flex items-center gap-1 py-1 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Tutup Menu</span>
+          </button>
+
           <span className="flex items-center gap-1 text-slate-400 dark:text-slate-500">
-            <Command className="w-3 h-3 text-amber-500/70" /> The Dispatch Command Center
+            <Command className="w-3 h-3 text-amber-500/70" /> The Dispatch
           </span>
         </div>
       </div>
