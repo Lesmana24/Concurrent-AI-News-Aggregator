@@ -14,6 +14,8 @@ import {
   Download,
   Bookmark,
   BookmarkCheck,
+  LayoutGrid,
+  List,
 } from 'lucide-react'
 import type { TrendingClusterItem, ClusterDetailResponse } from '../types'
 import { api } from '../services/api'
@@ -47,6 +49,16 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
   const [clusterDetail, setClusterDetail] = useState<ClusterDetailResponse | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [recomputing, setRecomputing] = useState(false)
+
+  // View density mode: 'card' (visual editorial) vs 'compact' (high-density newsroom wire)
+  const [viewMode, setViewMode] = useState<'card' | 'compact'>(() => {
+    return (localStorage.getItem('the_dispatch_trending_view_mode') as 'card' | 'compact') || 'card'
+  })
+
+  const handleToggleViewMode = (mode: 'card' | 'compact') => {
+    setViewMode(mode)
+    localStorage.setItem('the_dispatch_trending_view_mode', mode)
+  }
 
   const fetchTrending = async () => {
     setLoading(true)
@@ -136,12 +148,42 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
           </p>
         </div>
 
-        {/* Action Controls - Full width flex on mobile */}
+        {/* Action Controls - Density Toggle & Actions */}
         <div className="flex items-center gap-2 sm:gap-2.5 w-full sm:w-auto shrink-0 flex-wrap">
+          {/* View Mode Toggle: Cards vs Compact Wire */}
+          <div className="flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 shadow-xs">
+            <button
+              onClick={() => handleToggleViewMode('card')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono transition cursor-pointer ${
+                viewMode === 'card'
+                  ? 'bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-400 font-bold shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+              title="Tampilan Kartu Editorial Visual (Cards View)"
+              aria-label="Tampilan Kartu Editorial"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Cards</span>
+            </button>
+            <button
+              onClick={() => handleToggleViewMode('compact')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono transition cursor-pointer ${
+                viewMode === 'compact'
+                  ? 'bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-400 font-bold shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+              title="Tampilan Ringkas Terminal (Compact Newsroom Wire)"
+              aria-label="Tampilan Ringkas Terminal"
+            >
+              <List className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Compact</span>
+            </button>
+          </div>
+
           {onOpenExport && (
             <button
               onClick={onOpenExport}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-750 border border-slate-200 dark:border-slate-700 text-xs font-mono font-medium text-slate-700 dark:text-slate-200 transition min-h-[40px] touch-manipulation shadow-xs"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-750 border border-slate-200 dark:border-slate-700 text-xs font-mono font-medium text-slate-700 dark:text-slate-200 transition min-h-[40px] touch-manipulation shadow-xs cursor-pointer"
               title="Ekspor Briefing Kluster"
             >
               <Download className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
@@ -152,7 +194,7 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
           <button
             onClick={fetchTrending}
             disabled={loading}
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-750 border border-slate-200 dark:border-slate-700 text-xs font-mono font-medium text-slate-700 dark:text-slate-200 transition min-h-[40px] disabled:opacity-50 touch-manipulation shadow-xs"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-750 border border-slate-200 dark:border-slate-700 text-xs font-mono font-medium text-slate-700 dark:text-slate-200 transition min-h-[40px] disabled:opacity-50 touch-manipulation shadow-xs cursor-pointer"
             title="Muat ulang data"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${loading ? 'animate-spin' : ''}`} />
@@ -162,7 +204,7 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
           <button
             onClick={handleRecompute}
             disabled={recomputing}
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 text-xs font-mono font-bold shadow-md transition min-h-[40px] disabled:opacity-50 touch-manipulation"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 text-xs font-mono font-bold shadow-md transition min-h-[40px] disabled:opacity-50 touch-manipulation cursor-pointer"
           >
             <Flame className={`w-4 h-4 ${recomputing ? 'animate-bounce' : ''}`} />
             <span>{recomputing ? 'Menghitung...' : 'Recompute'}</span>
@@ -218,9 +260,9 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
         </div>
       )}
 
-      {/* State 4: Clusters Grid Cards */}
-      {!loading && !error && clusters.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-7">
+      {/* State 4: Clusters View (Cards vs Compact Wire) */}
+      {!loading && !error && clusters.length > 0 && viewMode === 'card' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-7 animate-in fade-in duration-200">
           {clusters.map((item, idx) => {
             const isSaved = isWatched ? isWatched(`cluster://${item.id}`) : false
             return (
@@ -230,7 +272,7 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
               >
                 <div>
                   {/* Visual Header: Editorial Cover Photo with Badges */}
-                  <div className="relative h-44 sm:h-56 w-full bg-slate-950 overflow-hidden">
+                  <div className="relative h-40 sm:h-52 w-full bg-slate-950 overflow-hidden">
                     <img
                       src={item.image_url || FALLBACK_NEWS_HERO}
                       alt={item.title}
@@ -272,7 +314,7 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
 
                       <span className="px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md border border-white/20 text-white font-mono text-xs flex items-center gap-1.5 shadow-md">
                         <Layers className="w-3.5 h-3.5 text-amber-400" />
-                        <span>{item.article_count} Artikel • {item.unique_outlets} Redaksi</span>
+                        <span>{item.article_count} Berita • {item.unique_outlets} Media</span>
                       </span>
                     </div>
 
@@ -292,8 +334,8 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
                   </div>
 
                   {/* Body Content */}
-                  <div className="p-4 sm:p-6 space-y-3">
-                    {/* Media Outlets Badges - Soft Cohesive Light Pills */}
+                  <div className="p-4 sm:p-5 space-y-2.5">
+                    {/* Media Outlets Badges */}
                     <div className="flex flex-wrap items-center gap-1.5">
                       {item.outlets.map((outlet) => (
                         <span
@@ -305,18 +347,21 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
                       ))}
                     </div>
 
-                    <h3 className="font-editorial text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors leading-snug line-clamp-2">
+                    <h3 
+                      onClick={() => handleInspect(item.id)}
+                      className="font-editorial text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors leading-snug line-clamp-2 cursor-pointer"
+                    >
                       {item.title}
                     </h3>
 
-                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed font-sans line-clamp-3">
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed font-sans line-clamp-2">
                       {item.summary}
                     </p>
                   </div>
                 </div>
 
-                {/* Card Footer Actions (Min 44px Touch Targets) */}
-                <div className="px-4 sm:px-6 pb-4 sm:pb-6 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 sm:gap-3 text-xs font-mono">
+                {/* Card Footer Actions */}
+                <div className="px-4 sm:p-5 pb-4 sm:pb-5 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 sm:gap-3 text-xs font-mono">
                   <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 truncate">
                     <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <span className="truncate">{formatTimeAgo(item.last_updated)}</span>
@@ -325,15 +370,15 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={() => handleInspect(item.id)}
-                      className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white font-medium transition flex items-center gap-1.5 min-h-[40px] touch-manipulation border border-slate-200 dark:border-slate-700"
+                      className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white font-medium transition flex items-center gap-1.5 min-h-[40px] touch-manipulation border border-slate-200 dark:border-slate-700 cursor-pointer"
                     >
                       <ImageIcon className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                      <span className="hidden xs:inline">Rincian & Foto</span>
+                      <span className="hidden xs:inline">Rincian</span>
                       <span className="xs:hidden">Detail</span>
                     </button>
                     <button
                       onClick={() => handleInspect(item.id)}
-                      className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold transition flex items-center gap-1 shadow-xs min-h-[40px] touch-manipulation"
+                      className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold transition flex items-center gap-1 shadow-xs min-h-[40px] touch-manipulation cursor-pointer"
                     >
                       <span>Telusuri</span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -341,6 +386,82 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
                   </div>
                 </div>
               </article>
+            )
+          })}
+        </div>
+      )}
+
+      {/* State 4 Alternative: Compact Newsroom Wire Mode */}
+      {!loading && !error && clusters.length > 0 && viewMode === 'compact' && (
+        <div className="space-y-2.5 animate-in fade-in duration-200">
+          {clusters.map((item, idx) => {
+            const isSaved = isWatched ? isWatched(`cluster://${item.id}`) : false
+            return (
+              <div
+                key={item.id}
+                className="group p-3 sm:p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500/50 hover:bg-slate-50/75 dark:hover:bg-slate-850/50 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-xs"
+              >
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  {/* Hotness Score Tag */}
+                  <div className="flex flex-col items-center justify-center w-12 sm:w-14 h-12 sm:h-14 rounded-xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 shrink-0 text-center">
+                    <span className="text-[10px] font-mono text-amber-700 dark:text-amber-400 font-bold">#{idx + 1}</span>
+                    <span className="text-xs sm:text-sm font-mono font-bold text-amber-900 dark:text-amber-300">
+                      {item.hotness_score.toFixed(1)}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {item.outlets.map((outlet) => (
+                        <span
+                          key={outlet}
+                          className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                        >
+                          {outlet}
+                        </span>
+                      ))}
+                      <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
+                        • {item.article_count} Berita • {formatTimeAgo(item.last_updated)}
+                      </span>
+                    </div>
+
+                    <h3 
+                      onClick={() => handleInspect(item.id)}
+                      className="font-editorial text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition cursor-pointer truncate"
+                      title={item.title}
+                    >
+                      {item.title}
+                    </h3>
+
+                    <p className="text-xs text-slate-600 dark:text-slate-400 font-sans line-clamp-1">
+                      {item.summary}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Compact Row Actions */}
+                <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                  <button
+                    onClick={() => handleToggleClusterWatchlist(item)}
+                    aria-label={isSaved ? `Hapus Kluster #${item.id} dari Watchlist` : `Simpan Kluster #${item.id} ke Watchlist`}
+                    className={`p-2 rounded-lg border transition cursor-pointer ${
+                      isSaved
+                        ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:text-amber-500'
+                    }`}
+                    title={isSaved ? 'Hapus dari Watchlist' : 'Simpan Kluster ke Watchlist'}
+                  >
+                    {isSaved ? <BookmarkCheck className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
+                  </button>
+
+                  <button
+                    onClick={() => handleInspect(item.id)}
+                    className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-mono transition border border-slate-200 dark:border-slate-700 cursor-pointer"
+                  >
+                    Rincian
+                  </button>
+                </div>
+              </div>
             )
           })}
         </div>
