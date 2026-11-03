@@ -374,7 +374,7 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     {!art.image_url && (
-                      <div className="absolute top-2 left-2 bg-black/70 p-1 rounded text-white">
+                      <div className="absolute top-2 left-2 bg-white/90 dark:bg-black/75 p-1 rounded-lg border border-slate-200/80 dark:border-white/20 text-slate-700 dark:text-white shadow-xs">
                         <ImageIcon className="w-3 h-3" />
                       </div>
                     )}

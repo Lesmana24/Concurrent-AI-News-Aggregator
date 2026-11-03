@@ -204,9 +204,9 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
           <button
             onClick={handleRecompute}
             disabled={recomputing}
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 text-xs font-mono font-bold shadow-md transition min-h-[40px] disabled:opacity-50 touch-manipulation cursor-pointer"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white text-xs font-mono font-bold shadow-md transition min-h-[40px] disabled:opacity-50 touch-manipulation cursor-pointer"
           >
-            <Flame className={`w-4 h-4 ${recomputing ? 'animate-bounce' : ''}`} />
+            <Flame className={`w-4 h-4 text-white ${recomputing ? 'animate-bounce' : ''}`} />
             <span>{recomputing ? 'Menghitung...' : 'Recompute'}</span>
           </button>
         </div>
@@ -286,13 +286,13 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
                     {/* Dark gradient overlay for text readability */}
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
 
-                    {/* Hotness Badge & Topic Rank - High Contrast Overlays */}
+                    {/* Hotness Badge & Topic Rank - High Contrast Adaptive Overlays */}
                     <div className="absolute top-3 left-3 flex items-center gap-2">
-                      <span className="px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md border border-white/20 text-amber-400 font-mono text-xs font-bold flex items-center gap-1 shadow-md">
-                        <Flame className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="px-2.5 py-1 rounded-lg bg-white/90 dark:bg-black/75 backdrop-blur-md border border-slate-200/80 dark:border-white/20 text-amber-800 dark:text-amber-400 font-mono text-xs font-bold flex items-center gap-1 shadow-sm">
+                        <Flame className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                         <span>#{idx + 1}</span>
                       </span>
-                      <span className="px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md border border-white/20 text-white font-mono text-xs font-semibold shadow-md">
+                      <span className="px-2.5 py-1 rounded-lg bg-white/90 dark:bg-black/75 backdrop-blur-md border border-slate-200/80 dark:border-white/20 text-slate-800 dark:text-white font-mono text-xs font-semibold shadow-sm">
                         Hotness {item.hotness_score.toFixed(1)}
                       </span>
                     </div>
@@ -302,18 +302,18 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
                       <button
                         onClick={() => handleToggleClusterWatchlist(item)}
                         aria-label={isSaved ? `Hapus Kluster #${item.id} dari Watchlist` : `Simpan Kluster #${item.id} ke Watchlist`}
-                        className={`p-1.5 rounded-lg backdrop-blur-md border transition cursor-pointer ${
+                        className={`p-1.5 rounded-lg backdrop-blur-md border transition cursor-pointer shadow-sm ${
                           isSaved
-                            ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md font-bold'
-                            : 'bg-black/75 text-white border-white/20 hover:text-amber-400'
+                            ? 'bg-amber-500 text-white border-amber-400 font-bold'
+                            : 'bg-white/90 dark:bg-black/75 text-slate-700 dark:text-white border-slate-200/80 dark:border-white/20 hover:text-amber-600 dark:hover:text-amber-400'
                         }`}
                         title={isSaved ? 'Hapus dari Watchlist' : 'Simpan Kluster ke Watchlist'}
                       >
-                        {isSaved ? <BookmarkCheck className="w-4 h-4" /> : <Bookmark className="w-4 h-4" />}
+                        {isSaved ? <BookmarkCheck className="w-4 h-4 text-white" /> : <Bookmark className="w-4 h-4" />}
                       </button>
 
-                      <span className="px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md border border-white/20 text-white font-mono text-xs flex items-center gap-1.5 shadow-md">
-                        <Layers className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="px-2.5 py-1 rounded-lg bg-white/90 dark:bg-black/75 backdrop-blur-md border border-slate-200/80 dark:border-white/20 text-slate-800 dark:text-white font-mono text-xs flex items-center gap-1.5 shadow-sm">
+                        <Layers className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                         <span>{item.article_count} Berita • {item.unique_outlets} Media</span>
                       </span>
                     </div>
@@ -378,10 +378,10 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
                     </button>
                     <button
                       onClick={() => handleInspect(item.id)}
-                      className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold transition flex items-center gap-1 shadow-xs min-h-[40px] touch-manipulation cursor-pointer"
+                      className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white font-bold transition flex items-center gap-1 shadow-xs min-h-[40px] touch-manipulation cursor-pointer"
                     >
                       <span>Telusuri</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
+                      <ArrowRight className="w-3.5 h-3.5 text-white" />
                     </button>
                   </div>
                 </div>
