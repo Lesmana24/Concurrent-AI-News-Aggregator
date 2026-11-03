@@ -186,11 +186,11 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
         </div>
       )}
 
-      {/* State 2: Loading Skeletons */}
+      {/* State 2: Loading Skeletons with Shimmer */}
       {loading && !error && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
           {[1, 2, 3, 4].map((n) => (
-            <div key={n} className="rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-lg animate-pulse">
+            <div key={n} className="rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-lg shimmer-wrapper">
               <div className="h-44 sm:h-56 bg-slate-200 dark:bg-slate-800/70 w-full" />
               <div className="p-4 sm:p-6 space-y-3 sm:space-y-4">
                 <div className="flex justify-between items-center">
@@ -226,7 +226,7 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
             return (
               <article
                 key={item.id}
-                className="group rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500/50 transition-all duration-200 overflow-hidden shadow-sm hover:shadow-md dark:shadow-xl dark:hover:shadow-2xl flex flex-col justify-between"
+                className="group rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500/50 transition-all duration-200 hover:-translate-y-0.5 overflow-hidden shadow-sm hover:shadow-md dark:shadow-xl dark:hover:shadow-2xl flex flex-col justify-between"
               >
                 <div>
                   {/* Visual Header: Editorial Cover Photo with Badges */}
@@ -259,7 +259,8 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
                     <div className="absolute top-3 right-3 flex items-center gap-2">
                       <button
                         onClick={() => handleToggleClusterWatchlist(item)}
-                        className={`p-1.5 rounded-lg backdrop-blur-md border transition ${
+                        aria-label={isSaved ? `Hapus Kluster #${item.id} dari Watchlist` : `Simpan Kluster #${item.id} ke Watchlist`}
+                        className={`p-1.5 rounded-lg backdrop-blur-md border transition cursor-pointer ${
                           isSaved
                             ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md font-bold'
                             : 'bg-black/75 text-white border-white/20 hover:text-amber-400'

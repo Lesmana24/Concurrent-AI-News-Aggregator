@@ -91,21 +91,21 @@ export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, pr
   return (
     <div className="space-y-8 sm:space-y-10">
       {/* Header */}
-      <div className="border-b border-slate-800 pb-4 sm:pb-5">
+      <div className="border-b border-slate-200 dark:border-slate-800 pb-4 sm:pb-5">
         <span className="text-[11px] sm:text-xs font-mono text-amber-700 dark:text-amber-400 uppercase tracking-wider font-bold">
           Analisis Komparatif Multi-Perspektif
         </span>
-        <h2 className="font-editorial text-xl sm:text-2xl lg:text-3xl font-bold text-slate-100 mt-1">
+        <h2 className="font-editorial text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">
           Media Bias & Sentiment Spectrum
         </h2>
-        <p className="text-xs sm:text-sm text-slate-300 mt-1 font-sans leading-relaxed max-w-2xl">
+        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 font-sans leading-relaxed max-w-2xl">
           Membedah secara visual bagaimana berbagai redaksi media membingkai (<i>framing</i>) peristiwa yang sama dengan skor sentimen objektif, konsensus fakta, dan titik divergensi narasi.
         </p>
       </div>
 
       {/* Preset Buttons for Quick 1-Click Testing */}
       <div className="space-y-2.5 sm:space-y-3">
-        <span className="text-[11px] sm:text-xs font-mono text-slate-400 font-semibold uppercase tracking-wider">
+        <span className="text-[11px] sm:text-xs font-mono text-slate-600 dark:text-slate-400 font-semibold uppercase tracking-wider">
           Uji Coba Cepat dengan Sampel Kasus Nyata:
         </span>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
@@ -203,9 +203,9 @@ export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, pr
         )}
       </section>
 
-      {/* Loading Skeleton */}
+      {/* Loading Skeleton with Shimmer */}
       {loading && (
-        <div className="p-6 sm:p-8 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-4 animate-pulse shadow-xs">
+        <div className="p-6 sm:p-8 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs shimmer-wrapper">
           <div className="h-6 w-1/3 bg-slate-200 dark:bg-slate-800 rounded" />
           <div className="h-28 w-full bg-slate-100 dark:bg-slate-800/60 rounded-xl" />
           <div className="h-20 w-full bg-slate-100 dark:bg-slate-800/60 rounded-xl" />
@@ -243,13 +243,13 @@ export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, pr
                 </h4>
               </div>
               <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs font-mono">
-                <span className="flex items-center gap-1.5 text-rose-400">
+                <span className="flex items-center gap-1.5 text-rose-700 dark:text-rose-400 font-semibold">
                   <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Kritis (-1.0)
                 </span>
-                <span className="flex items-center gap-1.5 text-slate-400">
+                <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 font-semibold">
                   <span className="w-2.5 h-2.5 rounded-full bg-slate-500" /> Netral (0.0)
                 </span>
-                <span className="flex items-center gap-1.5 text-emerald-400">
+                <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-semibold">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Positif (+1.0)
                 </span>
               </div>

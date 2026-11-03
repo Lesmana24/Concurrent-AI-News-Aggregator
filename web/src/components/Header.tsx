@@ -95,7 +95,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Mobile Search Button */}
         <button
           onClick={onOpenCommandPalette}
-          className="md:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-amber-500 min-h-[40px] min-w-[40px] flex items-center justify-center transition"
+          aria-label="Cari Berita atau Buka Command Palette"
+          className="md:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-amber-500 min-h-[40px] min-w-[40px] flex items-center justify-center transition cursor-pointer"
           title="Buka Command Palette"
         >
           <Search className="w-4 h-4" />
@@ -104,7 +105,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Export Briefing Trigger */}
         <button
           onClick={onOpenExportModal}
-          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 hover:bg-slate-200/80 dark:hover:bg-slate-850 active:scale-98 border border-slate-200 dark:border-slate-700/80 hover:border-amber-500/50 transition text-xs font-mono text-slate-700 dark:text-slate-200 min-h-[40px] touch-manipulation shadow-xs"
+          aria-label="Ekspor Executive Briefing"
+          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 hover:bg-slate-200/80 dark:hover:bg-slate-850 active:scale-98 border border-slate-200 dark:border-slate-700/80 hover:border-amber-500/50 transition text-xs font-mono text-slate-700 dark:text-slate-200 min-h-[40px] touch-manipulation shadow-xs cursor-pointer"
           title="Ekspor Executive Briefing (Markdown / CSV)"
         >
           <Download className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
@@ -114,7 +116,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Watchlist Drawer Trigger */}
         <button
           onClick={onOpenWatchlist}
-          className="relative flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 hover:bg-slate-200/80 dark:hover:bg-slate-850 active:scale-98 border border-slate-200 dark:border-slate-700/80 hover:border-amber-500/50 transition text-xs font-mono text-slate-700 dark:text-slate-200 min-h-[40px] touch-manipulation shadow-xs"
+          aria-label={`Buka Saved Watchlist (${watchlistCount} tersimpan)`}
+          className="relative flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 hover:bg-slate-200/80 dark:hover:bg-slate-850 active:scale-98 border border-slate-200 dark:border-slate-700/80 hover:border-amber-500/50 transition text-xs font-mono text-slate-700 dark:text-slate-200 min-h-[40px] touch-manipulation shadow-xs cursor-pointer"
           title="Buka Saved Watchlist"
         >
           <Bookmark className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />

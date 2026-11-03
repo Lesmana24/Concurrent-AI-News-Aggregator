@@ -87,6 +87,22 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
     const targetUrl = urlInput.trim()
     if (!targetUrl) return
 
+    // Client-side URL Validation
+    try {
+      const parsed = new URL(targetUrl)
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        setIngestError('URL harus menggunakan protokol http:// atau https://')
+        return
+      }
+      if (!parsed.hostname.includes('.')) {
+        setIngestError('Hostname URL tidak valid')
+        return
+      }
+    } catch {
+      setIngestError('Format URL tidak valid. Contoh: https://www.cnnindonesia.com/ekonomi/...')
+      return
+    }
+
     setIngesting(true)
     setIngestedResult(null)
     setIngestError(null)
@@ -309,11 +325,11 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
           </div>
         </div>
 
-        {/* Wire Articles List */}
+        {/* Wire Articles List with Shimmer */}
         {loadingWire && (
           <div className="space-y-4">
             {[1, 2, 3, 4].map((n) => (
-              <div key={n} className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-3 animate-pulse flex flex-col sm:flex-row gap-4 shadow-xs">
+              <div key={n} className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-3 flex flex-col sm:flex-row gap-4 shadow-xs shimmer-wrapper">
                 <div className="w-full sm:w-40 h-36 sm:h-24 bg-slate-200 dark:bg-slate-800 rounded-xl shrink-0" />
                 <div className="flex-1 space-y-2">
                   <div className="h-4 w-32 bg-slate-200 dark:bg-slate-800 rounded" />

@@ -81,6 +81,7 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
           </div>
           <button
             onClick={onClose}
+            aria-label="Tutup Watchlist"
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
           >
             <X className="w-5 h-5" />

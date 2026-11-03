@@ -70,31 +70,37 @@ export const TelegramBanner: React.FC = () => {
 
       {/* QR Code Modal for Desktop users */}
       {showQR && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl relative">
+        <div 
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setShowQR(false)}
+        >
+          <div 
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl relative text-slate-900 dark:text-slate-100"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               onClick={() => setShowQR(false)}
-              className="w-10 h-10 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 absolute top-3 right-3 flex items-center justify-center transition"
+              className="w-10 h-10 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 absolute top-3 right-3 flex items-center justify-center transition cursor-pointer"
               aria-label="Tutup QR Code"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="w-12 h-12 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center mx-auto">
+            <div className="w-12 h-12 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto">
               <Smartphone className="w-6 h-6" />
             </div>
 
             <div>
-              <h3 className="font-editorial text-lg font-bold text-slate-100">
+              <h3 className="font-editorial text-lg font-bold text-slate-900 dark:text-slate-100">
                 Pindai untuk Membuka Bot
               </h3>
-              <p className="text-xs text-slate-300 mt-1 font-sans">
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 font-sans">
                 Arahkan kamera smartphone Anda ke QR Code di bawah untuk langsung membuka chat di aplikasi Telegram:
               </p>
             </div>
 
             {/* Generated QR Code Image */}
-            <div className="p-3 bg-white rounded-xl inline-block shadow-lg mx-auto">
+            <div className="p-3 bg-white rounded-xl inline-block shadow-md border border-slate-200 dark:border-slate-700 mx-auto">
               <img
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(botUrl)}`}
                 alt="QR Code Telegram Bot"
@@ -105,7 +111,7 @@ export const TelegramBanner: React.FC = () => {
             </div>
 
             <div className="pt-1">
-              <span className="text-xs font-mono font-semibold text-amber-400">
+              <span className="text-xs font-mono font-bold text-amber-700 dark:text-amber-400">
                 @{botUsername}
               </span>
             </div>

@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { MessageSquare, Search, Send, Sparkles, RefreshCw, ExternalLink, Newspaper } from 'lucide-react'
+import React, { useState, useRef, useEffect } from 'react'
+import { MessageSquare, Search, Send, Sparkles, RefreshCw, ExternalLink, Newspaper, AlertCircle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import type { SemanticSearchResult } from '../types'
 import { api } from '../services/api'
@@ -68,6 +68,22 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
   const [citations, setCitations] = useState<string[]>([])
   const [qaError, setQaError] = useState<string | null>(null)
 
+  // Resilient stream abort and auto-scroll refs
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const answerEndRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (streaming && answerEndRef.current) {
+      answerEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [streamedAnswer, streaming])
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!searchQuery.trim()) return
@@ -85,9 +101,14 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
     }
   }
 
-  const handleStreamQA = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleStreamQA = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
     if (!question.trim()) return
+
+    // Cancel any ongoing stream before initiating new one
+    abortControllerRef.current?.abort()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
 
     setStreaming(true)
     setStreamedAnswer('')
@@ -109,8 +130,11 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
       },
       (err) => {
         setStreaming(false)
-        setQaError(err.message)
-      }
+        if (err.name !== 'AbortError') {
+          setQaError(err.message)
+        }
+      },
+      controller.signal
     )
   }
 
@@ -202,14 +226,28 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
             </form>
 
             {qaError && (
-              <div className="p-3.5 sm:p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs font-mono text-rose-600 dark:text-rose-300">
-                {qaError}
+              <div className="p-3.5 sm:p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-between gap-3 text-xs font-mono text-rose-700 dark:text-rose-300">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                  <span>{qaError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleStreamQA()}
+                  className="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-800 dark:text-rose-200 font-bold transition shrink-0 cursor-pointer"
+                >
+                  Coba Lagi
+                </button>
               </div>
             )}
 
-            {/* Answer Box */}
+            {/* Answer Box with Live Screen Reader Announcement */}
             {(streamedAnswer || streaming) && (
-              <div className="p-4 sm:p-5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-4 animate-in fade-in shadow-xs">
+              <div 
+                aria-live="polite"
+                aria-atomic="false"
+                className="p-4 sm:p-5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-4 animate-in fade-in shadow-xs"
+              >
                 <div className="flex items-center justify-between text-xs font-mono border-b border-slate-200 dark:border-slate-800 pb-3">
                   <span className="text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1.5">
                     <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Jawaban Sintesis AI:
@@ -242,6 +280,8 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
                   {streaming && (
                     <span className="inline-block w-2 h-4 ml-1 bg-amber-500 animate-pulse align-middle rounded-sm shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
                   )}
+                  {/* Auto-scroll anchor */}
+                  <div ref={answerEndRef} />
                 </div>
 
                 {/* Verified Citations Cards */}
@@ -330,9 +370,28 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
             </div>
           )}
 
+          {/* Shimmer Search Loader */}
+          {searching && (
+            <div className="space-y-3 pt-1">
+              {[1, 2, 3].map((n) => (
+                <div
+                  key={n}
+                  className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5 shimmer-wrapper"
+                >
+                  <div className="flex justify-between">
+                    <div className="h-4 w-20 bg-slate-200 dark:bg-slate-800 rounded" />
+                    <div className="h-4 w-14 bg-slate-200 dark:bg-slate-800 rounded" />
+                  </div>
+                  <div className="h-5 w-3/4 bg-slate-200 dark:bg-slate-800 rounded" />
+                  <div className="h-10 w-full bg-slate-100 dark:bg-slate-800/50 rounded" />
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Results List */}
           <div className="space-y-3 pt-1">
-            {searchResults.length > 0 ? (
+            {!searching && searchResults.length > 0 ? (
               searchResults.map((res) => (
                 <div
                   key={res.id}
