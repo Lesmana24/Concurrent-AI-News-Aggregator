@@ -99,7 +99,7 @@ print("Total Clusters:", data.get("total_clusters"))`,
                 </span>
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-400 font-sans">
-                Akses programatik ke pgvector semantic engine, clustering radar, dan RAG AI
+                Akses terintegrasi ke engine kecerdasan berita, radar klastering tren, dan sintesis liputan
               </p>
             </div>
           </div>
@@ -247,7 +247,7 @@ print("Total Clusters:", data.get("total_clusters"))`,
             rel="noopener noreferrer"
             className="hover:text-amber-600 dark:hover:text-amber-400 transition flex items-center gap-1"
           >
-            <Terminal className="w-3.5 h-3.5" /> Buka Dokumentasi OpenAPI Swagger →
+            <Terminal className="w-3.5 h-3.5" /> Buka Dokumentasi API Reference →
           </a>
           <button
             onClick={onClose}

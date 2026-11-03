@@ -97,8 +97,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-semantic',
-      title: 'Buka Semantic Inquiry & Live SSE Q&A',
-      subtitle: 'Tanya jawab RAG AI dan pencarian makna pgvector',
+      title: 'Buka Semantic Inquiry & Executive Q&A',
+      subtitle: 'Tanya jawab kecerdasan berita dan pencarian konsep liputan',
       category: 'Navigasi',
       icon: MessageSquareCode,
       run: () => { onSelectTab('semantic'); onClose() },
@@ -106,8 +106,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-telemetry',
-      title: 'Buka System & Engine Telemetry',
-      subtitle: 'Pantau health worker crawler, pgvector, dan Redis L1/L2 cache',
+      title: 'Buka System & Infrastructure Telemetry',
+      subtitle: 'Pantau status kesehatan harvester dan infrastruktur analitik sistem',
       category: 'Navigasi',
       icon: Activity,
       run: () => { onSelectTab('telemetry'); onClose() },
@@ -116,7 +116,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     {
       id: 'act-recompute',
       title: 'Hitung Ulang Klaster Berita (Recompute)',
-      subtitle: 'Jalankan kalkulasi kemiripan embedding vektor sekarang',
+      subtitle: 'Perbarui pemetaan klaster topik dan tren berita terkini',
       category: 'Aksi Sistem',
       icon: RefreshCw,
       run: () => {

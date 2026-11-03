@@ -144,7 +144,7 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 font-sans max-w-2xl leading-relaxed">
-            Pengelompokan otomatis artikel berita lintas portal nasional menggunakan kemiripan vektor AI, deteksi foto redaksi, dan kalkulasi indeks <i>Hotness Score</i> real-time.
+            Pengelompokan analitis artikel berita lintas portal nasional, deteksi liputan utama, dan kalkulasi indeks tren <i>Hotness Score</i> real-time.
           </p>
         </div>
 
@@ -286,36 +286,39 @@ export const TrendingRadar: React.FC<TrendingRadarProps> = ({
                     {/* Dark gradient overlay for text readability */}
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
 
-                    {/* Hotness Badge & Topic Rank - High Contrast Adaptive Overlays */}
-                    <div className="absolute top-3 left-3 flex items-center gap-2">
-                      <span className="px-2.5 py-1 rounded-lg bg-white/90 dark:bg-black/75 backdrop-blur-md border border-slate-200/80 dark:border-white/20 text-amber-800 dark:text-amber-400 font-mono text-xs font-bold flex items-center gap-1 shadow-sm">
-                        <Flame className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                        <span>#{idx + 1}</span>
-                      </span>
-                      <span className="px-2.5 py-1 rounded-lg bg-white/90 dark:bg-black/75 backdrop-blur-md border border-slate-200/80 dark:border-white/20 text-slate-800 dark:text-white font-mono text-xs font-semibold shadow-sm">
-                        Hotness {item.hotness_score.toFixed(1)}
-                      </span>
-                    </div>
+                    {/* Top Badges Bar - Full-width flex container preventing any mobile overlap */}
+                    <div className="absolute top-2.5 sm:top-3 inset-x-2.5 sm:inset-x-3 flex items-center justify-between gap-1.5 z-10 pointer-events-none">
+                      {/* Left: Rank & Hotness */}
+                      <div className="flex items-center gap-1 sm:gap-1.5 pointer-events-auto shrink-0">
+                        <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-white/90 dark:bg-black/75 backdrop-blur-md border border-slate-200/80 dark:border-white/20 text-amber-800 dark:text-amber-400 font-mono text-[11px] sm:text-xs font-bold flex items-center gap-1 shadow-sm">
+                          <Flame className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-600 dark:text-amber-400" />
+                          <span>#{idx + 1}</span>
+                        </span>
+                        <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-white/90 dark:bg-black/75 backdrop-blur-md border border-slate-200/80 dark:border-white/20 text-slate-800 dark:text-white font-mono text-[11px] sm:text-xs font-semibold shadow-sm">
+                          <span className="hidden sm:inline">Hotness </span>{item.hotness_score.toFixed(1)}
+                        </span>
+                      </div>
 
-                    {/* Coverage Outlets Badge */}
-                    <div className="absolute top-3 right-3 flex items-center gap-2">
-                      <button
-                        onClick={() => handleToggleClusterWatchlist(item)}
-                        aria-label={isSaved ? `Hapus Kluster #${item.id} dari Watchlist` : `Simpan Kluster #${item.id} ke Watchlist`}
-                        className={`p-1.5 rounded-lg backdrop-blur-md border transition cursor-pointer shadow-sm ${
-                          isSaved
-                            ? 'bg-amber-500 text-white border-amber-400 font-bold'
-                            : 'bg-white/90 dark:bg-black/75 text-slate-700 dark:text-white border-slate-200/80 dark:border-white/20 hover:text-amber-600 dark:hover:text-amber-400'
-                        }`}
-                        title={isSaved ? 'Hapus dari Watchlist' : 'Simpan Kluster ke Watchlist'}
-                      >
-                        {isSaved ? <BookmarkCheck className="w-4 h-4 text-white" /> : <Bookmark className="w-4 h-4" />}
-                      </button>
+                      {/* Right: Coverage & Bookmark */}
+                      <div className="flex items-center gap-1 sm:gap-1.5 pointer-events-auto shrink-0">
+                        <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-white/90 dark:bg-black/75 backdrop-blur-md border border-slate-200/80 dark:border-white/20 text-slate-800 dark:text-white font-mono text-[11px] sm:text-xs flex items-center gap-1 shadow-sm">
+                          <Layers className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-600 dark:text-amber-400" />
+                          <span>{item.article_count} B<span className="hidden xs:inline">erita</span><span className="hidden sm:inline"> • {item.unique_outlets} Media</span></span>
+                        </span>
 
-                      <span className="px-2.5 py-1 rounded-lg bg-white/90 dark:bg-black/75 backdrop-blur-md border border-slate-200/80 dark:border-white/20 text-slate-800 dark:text-white font-mono text-xs flex items-center gap-1.5 shadow-sm">
-                        <Layers className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                        <span>{item.article_count} Berita • {item.unique_outlets} Media</span>
-                      </span>
+                        <button
+                          onClick={() => handleToggleClusterWatchlist(item)}
+                          aria-label={isSaved ? `Hapus Kluster #${item.id} dari Watchlist` : `Simpan Kluster #${item.id} ke Watchlist`}
+                          className={`p-1 sm:p-1.5 rounded-lg backdrop-blur-md border transition cursor-pointer shadow-sm ${
+                            isSaved
+                              ? 'bg-amber-500 text-white border-amber-400 font-bold'
+                              : 'bg-white/90 dark:bg-black/75 text-slate-700 dark:text-white border-slate-200/80 dark:border-white/20 hover:text-amber-600 dark:hover:text-amber-400'
+                          }`}
+                          title={isSaved ? 'Hapus dari Watchlist' : 'Simpan Kluster ke Watchlist'}
+                        >
+                          {isSaved ? <BookmarkCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" /> : <Bookmark className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                        </button>
+                      </div>
                     </div>
 
                     {/* Secondary thumbnail teaser if present */}

@@ -53,7 +53,7 @@ export const SystemTelemetry: React.FC<SystemTelemetryProps> = ({ apiKey, user, 
           Engine Telemetry & Controls
         </h2>
         <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 font-sans leading-relaxed max-w-2xl">
-          Pantau status kesehatan Harvester RSS otonom, sisa kuota API Key sandbox, dan keandalan Multi-Provider AI Fallback Chain (Groq $\rightarrow$ NVIDIA NIM $\rightarrow$ Gemini $\rightarrow$ Local Notice).
+          Pantau status kesehatan Harvester berita otonom, alokasi kuota komputasi, dan keandalan arsitektur Multi-Tier High-Availability Neural Network.
         </p>
       </div>
 
@@ -124,15 +124,15 @@ export const SystemTelemetry: React.FC<SystemTelemetryProps> = ({ apiKey, user, 
           <div className="space-y-1 text-xs font-mono text-slate-700 dark:text-slate-300">
             <div className="flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
-              <span>Tier 1: Groq (Llama-3.3 / Qwen)</span>
+              <span>Tier 1: Ultra-Fast Neural Engine</span>
             </div>
             <div className="flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
-              <span>Tier 2: NVIDIA NIM (Mistral-7B)</span>
+              <span>Tier 2: High-Capacity Inference Core</span>
             </div>
             <div className="flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
-              <span>Tier 3: Gemini 2.0 Flash</span>
+              <span>Tier 3: Multimodal Deep Synthesis</span>
             </div>
           </div>
         </div>

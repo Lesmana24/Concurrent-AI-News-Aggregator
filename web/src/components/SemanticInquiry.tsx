@@ -143,13 +143,13 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
       {/* Header */}
       <div className="border-b border-slate-200 dark:border-slate-800 pb-4 sm:pb-5">
         <span className="text-[11px] sm:text-xs font-mono text-amber-700 dark:text-amber-400 uppercase tracking-wider font-bold">
-          RAG & pgvector Knowledge Engine
+          Media Intelligence & Deep Research
         </span>
         <h2 className="font-editorial text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">
-          Semantic Inquiry & Live SSE Q&A
+          Semantic Inquiry & Executive Q&A
         </h2>
         <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 font-sans leading-relaxed max-w-2xl">
-          Pencarian makna semantik mendalam pada arsip berita dan interaksi tanya jawab langsung dengan efek pengetikan <i>real-time typewriter</i> via Server-Sent Events.
+          Pusat riset dan penelusuran fakta mendalam pada arsip berita nasional, dengan analisis cerdas serta sintesis bukti liputan secara langsung.
         </p>
       </div>
 
@@ -162,11 +162,11 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
               <div className="flex items-center gap-2">
                 <MessageSquare className="w-5 h-5 text-amber-500" />
                 <h3 className="font-editorial text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
-                  Live Typewriter Q&A (SSE)
+                  Live Intelligence Q&A
                 </h3>
               </div>
               <span className="text-[10px] sm:text-xs font-mono font-bold px-2.5 py-0.5 rounded-md bg-amber-500/10 dark:bg-amber-500/15 text-amber-800 dark:text-amber-400 border border-amber-500/30">
-                Server-Sent Events
+                Real-time Stream
               </span>
             </div>
 
@@ -254,7 +254,7 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
                   </span>
                   {provider && (
                     <span className="text-slate-600 dark:text-slate-400 font-medium px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                      Provider: <strong className="text-amber-700 dark:text-amber-400 font-bold">{provider}</strong>
+                      Engine: <strong className="text-amber-700 dark:text-amber-400 font-bold">Neural Synthesis Core</strong>
                     </span>
                   )}
                 </div>
@@ -328,11 +328,11 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
             <div className="flex items-center gap-2">
               <Search className="w-5 h-5 text-amber-500" />
               <h3 className="font-editorial text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
-                pgvector Semantic Search
+                Semantic Concept Search
               </h3>
             </div>
             <span className="text-[10px] sm:text-xs font-mono font-bold px-2.5 py-0.5 rounded-md bg-blue-500/10 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30">
-              Cosine Distance
+              Relevance Index
             </span>
           </div>
 

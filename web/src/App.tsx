@@ -238,10 +238,10 @@ export const App: React.FC = () => {
               rel="noopener noreferrer"
               className="hover:text-amber-400 transition"
             >
-              OpenAPI Swagger
+              API Reference
             </a>
             <span>•</span>
-            <span>v1.0 Go + React 19</span>
+            <span>v1.0 Enterprise Edition</span>
           </div>
         </div>
       </footer>

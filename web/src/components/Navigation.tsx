@@ -13,7 +13,7 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }
     { id: 'trending', label: 'Trending Radar', icon: Flame },
     { id: 'wire', label: 'Live Wire & Ingest', icon: Radio },
     { id: 'bias', label: 'Media Bias Spectrum', icon: Scale },
-    { id: 'semantic', label: 'Semantic Inquiry & SSE', icon: MessageSquare },
+    { id: 'semantic', label: 'Semantic Inquiry & Q&A', icon: MessageSquare },
     { id: 'telemetry', label: 'Engine Telemetry', icon: SlidersHorizontal },
   ]
 

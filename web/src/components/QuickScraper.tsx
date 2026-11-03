@@ -150,13 +150,13 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
       <section className="p-4 sm:p-7 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 space-y-4 sm:space-y-5 shadow-sm dark:shadow-xl transition-colors">
         <div>
           <span className="text-[11px] sm:text-xs font-mono text-amber-700 dark:text-amber-400 uppercase tracking-wider font-bold">
-            Sandbox Ekstraksi Berita Instan
+            Portal Ekstraksi Berita Terverifikasi
           </span>
           <h2 className="font-editorial text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">
-            Quick URL Scraper & AI Summarizer
+            Instant URL Ingest & Executive Summarizer
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 font-sans leading-relaxed">
-            Tempelkan tautan artikel dari portal media nasional untuk menguji ekstraksi metadata, foto redaksi, dan ringkasan AI seketika.
+            Tempelkan tautan artikel dari portal media nasional untuk memproses ekstraksi metadata, verifikasi foto redaksi, dan analisis ringkasan seketika.
           </p>
         </div>
 
@@ -177,7 +177,7 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
             {ingesting ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Mengekstrak AI...</span>
+                <span>Menganalisis Konten...</span>
               </>
             ) : (
               <>
