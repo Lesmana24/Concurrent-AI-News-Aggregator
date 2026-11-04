@@ -53,6 +53,10 @@ func FilterURLs(rawURLs []string, maxCount int) ([]string, error) {
 				return nil, fmt.Errorf("access to localhost URL '%s' is prohibited", trimmed)
 			}
 
+			if isRestrictedHost(host) {
+				return nil, fmt.Errorf("access to cloud metadata/restricted domain '%s' is prohibited", trimmed)
+			}
+
 			// SSRF verification: Check IP restrictions
 			if err := validateHostIP(host); err != nil {
 				return nil, fmt.Errorf("URL '%s' rejected: %w", trimmed, err)
@@ -87,6 +91,22 @@ func FilterURLs(rawURLs []string, maxCount int) ([]string, error) {
 	return filtered, nil
 }
 
+func isRestrictedHost(host string) bool {
+	h := strings.ToLower(strings.TrimSpace(host))
+	if h == "" {
+		return true
+	}
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	// Cloud metadata hostnames
+	if h == "metadata.google.internal" || strings.HasSuffix(h, ".metadata.google.internal") ||
+		h == "metadata.goog" || h == "instance-data" {
+		return true
+	}
+	return false
+}
+
 func validateHostIP(host string) error {
 	// If direct IP
 	if ip := net.ParseIP(host); ip != nil {
@@ -99,8 +119,10 @@ func validateHostIP(host string) error {
 	// Resolve hostname
 	ips, err := net.LookupIP(host)
 	if err != nil {
-		// If DNS resolution fails, allow if not an obviously restricted domain
-		return nil
+		return fmt.Errorf("domain '%s' could not be resolved (unreachable or invalid domain): %w", host, err)
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("domain '%s' has no associated IP addresses", host)
 	}
 
 	for _, ip := range ips {
@@ -112,15 +134,70 @@ func validateHostIP(host string) error {
 	return nil
 }
 
+// isRestrictedIP inspects an IP address against loopback, private RFC 1918, link-local,
+// CGNAT RFC 6598, cloud metadata, test-net, and reserved IP ranges.
 func isRestrictedIP(ip net.IP) bool {
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+	if ip == nil {
 		return true
 	}
-	// Check IPv4 169.254.x.x (AWS/GCP metadata)
+
+	// Normalize IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1) to 4-byte IPv4 representation
 	if ip4 := ip.To4(); ip4 != nil {
+		ip = ip4
+	}
+
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
+		return true
+	}
+
+	if ip4 := ip.To4(); ip4 != nil {
+		// 0.0.0.0/8 (Current network)
+		if ip4[0] == 0 {
+			return true
+		}
+		// 100.64.0.0/10 (RFC 6598 Shared Address Space / CGNAT / Cloud VPC - includes Alibaba 100.100.100.200)
+		if ip4[0] == 100 && (ip4[1]&0xc0) == 64 {
+			return true
+		}
+		// 169.254.0.0/16 (AWS / GCP / Azure / DigitalOcean Link-Local Metadata)
 		if ip4[0] == 169 && ip4[1] == 254 {
 			return true
 		}
+		// 192.0.0.0/24 (IETF Protocol Assignments)
+		if ip4[0] == 192 && ip4[1] == 0 && ip4[2] == 0 {
+			return true
+		}
+		// 192.0.2.0/24 (TEST-NET-1)
+		if ip4[0] == 192 && ip4[1] == 0 && ip4[2] == 2 {
+			return true
+		}
+		// 198.18.0.0/15 (Network benchmark tests)
+		if ip4[0] == 198 && (ip4[1] == 18 || ip4[1] == 19) {
+			return true
+		}
+		// 198.51.100.0/24 (TEST-NET-2)
+		if ip4[0] == 198 && ip4[1] == 51 && ip4[2] == 100 {
+			return true
+		}
+		// 203.0.113.0/24 (TEST-NET-3)
+		if ip4[0] == 203 && ip4[1] == 0 && ip4[2] == 113 {
+			return true
+		}
+		// 240.0.0.0/4 (Reserved / Class E)
+		if ip4[0] >= 240 {
+			return true
+		}
+		// 255.255.255.255 (Broadcast)
+		if ip4[0] == 255 && ip4[1] == 255 && ip4[2] == 255 && ip4[3] == 255 {
+			return true
+		}
+		return false
 	}
+
+	// IPv6 Documentation (2001:db8::/32)
+	if ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x0d && ip[3] == 0xb8 {
+		return true
+	}
+
 	return false
 }

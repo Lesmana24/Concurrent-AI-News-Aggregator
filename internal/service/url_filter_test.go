@@ -68,3 +68,29 @@ func TestFilterURLs_MaxCountLimit(t *testing.T) {
 	assert.Len(t, filtered, 5)
 }
 
+func TestFilterURLs_RejectCloudMetadataAndRestrictedIPs(t *testing.T) {
+	restrictedURLs := []string{
+		"http://metadata.google.internal/computeMetadata/v1/",
+		"http://instance-data/latest/meta-data/",
+		"http://169.254.169.254/latest/meta-data/",
+		"http://100.100.100.200/latest/meta-data/", // Alibaba cloud metadata
+		"http://100.64.0.1/internal-status",        // CGNAT
+		"http://192.0.2.1/docs",                    // TEST-NET-1
+		"http://[::ffff:127.0.0.1]:8080/admin",     // IPv4-mapped loopback
+		"http://[::ffff:169.254.169.254]/meta",     // IPv4-mapped link-local
+		"http://[::ffff:10.0.0.1]/secret",          // IPv4-mapped RFC 1918
+	}
+
+	for _, u := range restrictedURLs {
+		_, err := FilterURLs([]string{u}, 5)
+		assert.Error(t, err, "URL '%s' must be rejected by SSRF filter", u)
+	}
+}
+
+func TestFilterURLs_RejectUnresolvableDomain(t *testing.T) {
+	badDomain := "http://this-domain-definitely-does-not-exist-123456789.org/news"
+	_, err := FilterURLs([]string{badDomain}, 5)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "could not be resolved")
+}
+

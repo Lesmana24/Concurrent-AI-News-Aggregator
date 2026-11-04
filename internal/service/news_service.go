@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -53,6 +54,7 @@ type newsService struct {
 	cacheSvc     cache.CacheService
 	embeddingSvc ai.EmbeddingService
 	sfGroup      singleflight.Group
+	httpClient   *http.Client
 }
 
 type ScrapedArticle struct {
@@ -74,6 +76,7 @@ func NewNewsService(repo Repository, aiServices ...ai.AIService) NewsService {
 		repo:         repo,
 		aiService:    aiSvc,
 		embeddingSvc: ai.NewDefaultEmbeddingService(),
+		httpClient:   NewSafeHTTPClient(15 * time.Second),
 	}
 }
 
@@ -487,7 +490,11 @@ func (s *newsService) getOrFetchArticleContent(ctx context.Context, url string) 
 }
 
 func (s *newsService) scrapeArticle(ctx context.Context, url string) (*ScrapedArticle, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := s.httpClient
+	if client == nil {
+		client = NewSafeHTTPClient(15 * time.Second)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -504,7 +511,9 @@ func (s *newsService) scrapeArticle(ctx context.Context, url string) (*ScrapedAr
 		return nil, fmt.Errorf("http error: %d", resp.StatusCode)
 	}
 
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	// Limit HTML read to 5 MB to prevent memory exhaustion / decompression bombs
+	limitedReader := io.LimitReader(resp.Body, 5*1024*1024)
+	doc, err := goquery.NewDocumentFromReader(limitedReader)
 	if err != nil {
 		return nil, err
 	}
