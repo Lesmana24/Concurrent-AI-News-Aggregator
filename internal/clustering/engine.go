@@ -333,8 +333,8 @@ func (e *ClusterEngine) Recompute(ctx context.Context) ([]models.TopicCluster, e
 				"3. <Intisari>: Ringkasan konsensus 2-3 kalimat objektif.\n" +
 				"4. DILARANG KERAS menyertakan proses berpikir, bahasa Inggris ('We need to...', 'The relevant article...'), atau tag <think>/<intisari>."
 
-			aiResp, _, err := e.aiSvc.AnswerQuestion(ctx, contextBuilder.String(), prompt)
-			if err == nil {
+			aiResp, provider, err := e.aiSvc.AnswerQuestion(ctx, contextBuilder.String(), prompt)
+			if err == nil && !ai.IsLocalFallback(provider) && !strings.Contains(aiResp, "[Pemberitahuan Sistem]") {
 				if cleanTitle, cleanSummary, ok := cleanClusterSynthesis(aiResp); ok {
 					title = cleanTitle
 					summary = cleanSummary

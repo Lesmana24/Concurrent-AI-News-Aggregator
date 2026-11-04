@@ -8,6 +8,14 @@ import (
 	"time"
 )
 
+// ProviderNameLocalFallback is the authoritative identifier for the text-based local fallback provider.
+const ProviderNameLocalFallback = "Local-Fallback"
+
+// IsLocalFallback returns true if the provider name corresponds to the local fallback provider.
+func IsLocalFallback(providerName string) bool {
+	return strings.Contains(strings.ToLower(providerName), "local-fallback")
+}
+
 // LocalFallbackProvider provides a text-based graceful fallback when external LLM APIs fail.
 type LocalFallbackProvider struct{}
 
@@ -17,7 +25,7 @@ func NewLocalFallbackProvider() *LocalFallbackProvider {
 }
 
 func (p *LocalFallbackProvider) Name() string {
-	return "Local-Fallback"
+	return ProviderNameLocalFallback
 }
 
 func (p *LocalFallbackProvider) IsConfigured() bool {

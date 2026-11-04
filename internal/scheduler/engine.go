@@ -292,8 +292,8 @@ func (e *BriefingEngine) SynthesizeBriefing(ctx context.Context, topic string) (
 
 	aiAnswer := ""
 	if e.aiSvc != nil {
-		ans, _, err := e.aiSvc.AnswerQuestion(ctx, sb.String(), promptQuestion)
-		if err == nil && strings.TrimSpace(ans) != "" {
+		ans, provider, err := e.aiSvc.AnswerQuestion(ctx, sb.String(), promptQuestion)
+		if err == nil && !ai.IsLocalFallback(provider) && !strings.Contains(ans, "[Pemberitahuan Sistem]") && strings.TrimSpace(ans) != "" {
 			aiAnswer = ans
 		}
 	}

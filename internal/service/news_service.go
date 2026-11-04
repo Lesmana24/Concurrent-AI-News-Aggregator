@@ -135,12 +135,16 @@ func (s *newsService) SummarizeArticles(ctx context.Context, apiKey string, urls
 	close(errChan)
 
 	var finalResults []models.ArticleResponse
+	fallbackCount := 0
 	for res := range resultsChan {
 		finalResults = append(finalResults, res)
+		if ai.IsLocalFallback(res.Source) || strings.Contains(res.Summary, "[Pemberitahuan Sistem]") {
+			fallbackCount++
+		}
 	}
 
-	// Refund quota for failed URLs
-	failedCount := len(validURLs) - len(finalResults)
+	// Refund quota for failed URLs and for local fallback notices
+	failedCount := (len(validURLs) - len(finalResults)) + fallbackCount
 	if failedCount > 0 {
 		if err := s.repo.RefundUserQuota(user.ID, failedCount); err != nil {
 			log.Printf("Warning: failed to refund %d quota to user %d: %v", failedCount, user.ID, err)
@@ -230,6 +234,10 @@ func (s *newsService) AnswerQuestion(ctx context.Context, apiKey string, req mod
 		return nil, fmt.Errorf("AI Q&A failed: %w", err)
 	}
 
+	if ai.IsLocalFallback(provider) {
+		refundOnFailure()
+	}
+
 	return &models.NewsQAResponse{
 		Question: req.Question,
 		Answer:   answer,
@@ -275,6 +283,10 @@ func (s *newsService) AnswerQuestionStream(ctx context.Context, apiKey string, r
 		return "", nil, fmt.Errorf("AI streaming Q&A failed: %w", err)
 	}
 
+	if ai.IsLocalFallback(provider) {
+		refundOnFailure()
+	}
+
 	return provider, validURLs, nil
 }
 
@@ -282,10 +294,11 @@ func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*mod
 	cacheKey := "article:summary:" + hashURL(url)
 
 	// 1. Check Redis L1 Cache (Fastest: ~1-2ms)
+	// Bypasses cached fallback error notices
 	if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
 		if cachedJSON, err := s.cacheSvc.Get(ctx, cacheKey); err == nil && cachedJSON != "" {
 			var res models.ArticleResponse
-			if err := json.Unmarshal([]byte(cachedJSON), &res); err == nil && res.Summary != "" {
+			if err := json.Unmarshal([]byte(cachedJSON), &res); err == nil && strings.TrimSpace(res.Summary) != "" && !ai.IsLocalFallback(res.Source) && !strings.Contains(res.Summary, "[Pemberitahuan Sistem]") {
 				res.Source = res.Source + " (Redis L1)"
 				return &res, nil
 			}
@@ -293,8 +306,9 @@ func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*mod
 	}
 
 	// 2. Check PostgreSQL L2 Cache
+	// Bypasses cached fallback error notices
 	cached, err := s.repo.GetCachedArticles(url)
-	if err == nil && len(cached) > 0 && strings.TrimSpace(cached[0].Summary) != "" {
+	if err == nil && len(cached) > 0 && strings.TrimSpace(cached[0].Summary) != "" && !ai.IsLocalFallback(cached[0].AIProvider) && !strings.Contains(cached[0].Summary, "[Pemberitahuan Sistem]") {
 		res := &models.ArticleResponse{
 			Title:   cached[0].Title,
 			URL:     cached[0].URL,
@@ -314,7 +328,7 @@ func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*mod
 	val, err, _ := s.sfGroup.Do(url, func() (interface{}, error) {
 		// Double-check cache in case another flight just finished
 		cached, err := s.repo.GetCachedArticles(url)
-		if err == nil && len(cached) > 0 && strings.TrimSpace(cached[0].Summary) != "" {
+		if err == nil && len(cached) > 0 && strings.TrimSpace(cached[0].Summary) != "" && !ai.IsLocalFallback(cached[0].AIProvider) && !strings.Contains(cached[0].Summary, "[Pemberitahuan Sistem]") {
 			res := &models.ArticleResponse{
 				Title:   cached[0].Title,
 				URL:     cached[0].URL,
@@ -347,28 +361,46 @@ func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*mod
 			return nil, fmt.Errorf("AI error [%s]: %w", url, err)
 		}
 
-		article := models.Article{
-			Title:       title,
-			URL:         url,
-			Content:     content,
-			Summary:     summary,
-			ImageURL:    imageURL,
-			AIProvider:  provider,
-			PublishedAt: time.Now(),
-		}
-		if err := s.repo.BatchInsertArticles([]models.Article{article}); err != nil {
-			log.Printf("Warning: failed to cache article %s: %v", url, err)
-		} else if s.embeddingSvc != nil && s.repo.HasVectorSupport() {
-			// Asynchronously generate and persist vector embedding for semantic search
-			go func(t, sum, u string) {
-				art, err := s.repo.GetArticleByURL(u)
-				if err == nil && art != nil && art.ID > 0 {
-					textToEmbed := fmt.Sprintf("%s\n\n%s", t, sum)
-					if vec, err := s.embeddingSvc.GenerateEmbedding(context.Background(), textToEmbed); err == nil && len(vec) > 0 {
-						_ = s.repo.SaveArticleEmbedding(art.ID, vec)
+		isFallback := ai.IsLocalFallback(provider) || strings.Contains(summary, "[Pemberitahuan Sistem]")
+
+		if !isFallback {
+			article := models.Article{
+				Title:       title,
+				URL:         url,
+				Content:     content,
+				Summary:     summary,
+				ImageURL:    imageURL,
+				AIProvider:  provider,
+				PublishedAt: time.Now(),
+			}
+			if err := s.repo.BatchInsertArticles([]models.Article{article}); err != nil {
+				log.Printf("Warning: failed to cache article %s: %v", url, err)
+			} else if s.embeddingSvc != nil && s.repo.HasVectorSupport() {
+				// Asynchronously generate and persist vector embedding for semantic search
+				go func(t, sum, u string) {
+					art, err := s.repo.GetArticleByURL(u)
+					if err == nil && art != nil && art.ID > 0 {
+						textToEmbed := fmt.Sprintf("%s\n\n%s", t, sum)
+						if vec, err := s.embeddingSvc.GenerateEmbedding(context.Background(), textToEmbed); err == nil && len(vec) > 0 {
+							_ = s.repo.SaveArticleEmbedding(art.ID, vec)
+						}
 					}
-				}
-			}(title, summary, url)
+				}(title, summary, url)
+			}
+		} else {
+			// Fallback: Preserve scraped content in database with empty Summary and AIProvider so subsequent attempts can re-summarize without re-scraping
+			article := models.Article{
+				Title:       title,
+				URL:         url,
+				Content:     content,
+				Summary:     "",
+				ImageURL:    imageURL,
+				AIProvider:  "",
+				PublishedAt: time.Now(),
+			}
+			if err := s.repo.BatchInsertArticles([]models.Article{article}); err != nil {
+				log.Printf("Warning: failed to cache raw scraped article %s: %v", url, err)
+			}
 		}
 
 		res := &models.ArticleResponse{
@@ -379,8 +411,8 @@ func (s *newsService) getOrProcessArticle(ctx context.Context, url string) (*mod
 			ImageURL: imageURL,
 		}
 
-		// Cache in Redis L1
-		if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
+		// Cache in Redis L1 only if NOT fallback
+		if !isFallback && s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
 			_ = s.cacheSvc.Set(ctx, cacheKey, res, 24*time.Hour)
 		}
 
@@ -600,6 +632,7 @@ func (s *newsService) GlobalQA(ctx context.Context, apiKey string, req models.Gl
 	// 1. Vector Search for top-3 relevant articles in the archive
 	results, err := s.SemanticSearch(ctx, req.Question, 3)
 	if err != nil || len(results) == 0 {
+		refundOnFailure()
 		return &models.GlobalQAResponse{
 			Question: req.Question,
 			Answer:   "Maaf, tidak ditemukan arsip berita yang relevan dengan pertanyaan Anda di dalam sistem saat ini.",
@@ -620,6 +653,10 @@ func (s *newsService) GlobalQA(ctx context.Context, apiKey string, req models.Gl
 	if err != nil {
 		refundOnFailure()
 		return nil, fmt.Errorf("global AI Q&A failed: %w", err)
+	}
+
+	if ai.IsLocalFallback(provider) || strings.Contains(answer, "[Pemberitahuan Sistem]") {
+		refundOnFailure()
 	}
 
 	return &models.GlobalQAResponse{
@@ -654,7 +691,7 @@ func (s *newsService) CompareArticles(ctx context.Context, apiKey string, req mo
 	if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
 		if cachedJSON, err := s.cacheSvc.Get(ctx, cacheKey); err == nil && cachedJSON != "" {
 			var cachedReport models.NewsCompareResponse
-			if err := json.Unmarshal([]byte(cachedJSON), &cachedReport); err == nil && cachedReport.Topic != "" {
+			if err := json.Unmarshal([]byte(cachedJSON), &cachedReport); err == nil && cachedReport.Topic != "" && !ai.IsLocalFallback(cachedReport.Provider) {
 				cachedReport.Provider = cachedReport.Provider + " (Redis L1)"
 				return &cachedReport, nil
 			}
@@ -729,8 +766,11 @@ func (s *newsService) CompareArticles(ctx context.Context, apiKey string, req mo
 	}
 	report.Provider = provider
 
-	// 5. Cache in Redis L1 (TTL: 24h)
-	if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
+	isFallback := ai.IsLocalFallback(provider)
+	if isFallback {
+		refundOnFailure()
+	} else if s.cacheSvc != nil && s.cacheSvc.IsAvailable() {
+		// 5. Cache in Redis L1 (TTL: 24h) only when successful and NOT fallback
 		_ = s.cacheSvc.Set(ctx, cacheKey, report, 24*time.Hour)
 	}
 

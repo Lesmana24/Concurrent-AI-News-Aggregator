@@ -463,6 +463,7 @@ func TestGlobalQA_NoRelevantArticlesGracefulNotice(t *testing.T) {
 	user.ID = 1
 	mockRepo.On("GetUserByKey", "valid-key").Return(user, nil)
 	mockRepo.On("DeductUserQuota", uint(1), 1).Return(true, nil)
+	mockRepo.On("RefundUserQuota", uint(1), 1).Return(nil)
 
 	mockRepo.On("SearchSimilarArticles", mock.Anything, mock.Anything, 3, 0.20).Return([]models.SemanticSearchResult{}, nil)
 
@@ -526,4 +527,162 @@ func TestCompareArticles_RejectsLessThanTwoURLs(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, report)
 	assert.Contains(t, err.Error(), "at least 2 valid news URLs")
+}
+
+func TestSummarizeArticles_LocalFallbackDoesNotPersistSummaryAndRefundsQuota(t *testing.T) {
+	t.Setenv("ALLOW_INTERNAL_URLS", "true")
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html>
+			<head><title>Berita Penting Hari Ini</title></head>
+			<body><p>Ini adalah isi artikel berita yang lengkap dan aktual untuk diuji coba agar memiliki lebih dari seratus karakter teks artikel yang valid.</p></body>
+		</html>`))
+	}))
+	defer ts.Close()
+
+	mockRepo := new(MockRepository)
+	mockAI := new(MockAIService)
+	svc := NewNewsService(mockRepo, mockAI)
+
+	user := &models.User{Quota: 10}
+	user.ID = 1
+	mockRepo.On("GetUserByKey", "valid-key").Return(user, nil)
+	mockRepo.On("DeductUserQuota", uint(1), 1).Return(true, nil)
+	mockRepo.On("GetCachedArticles", ts.URL).Return([]models.Article{}, nil)
+
+	fallbackMsg := "[Pemberitahuan Sistem] Ringkasan otomatis AI sedang tidak dapat dibuat karena seluruh penyedia AI sedang mengalami kendala teknis."
+	mockAI.On("Summarize", mock.Anything, mock.Anything).Return(fallbackMsg, ai.ProviderNameLocalFallback, nil)
+
+	// In fallback, it MUST persist raw scraped content but leave Summary and AIProvider empty
+	mockRepo.On("BatchInsertArticles", mock.MatchedBy(func(arts []models.Article) bool {
+		if len(arts) != 1 {
+			return false
+		}
+		return arts[0].Summary == "" && arts[0].AIProvider == "" && arts[0].Content != ""
+	})).Return(nil)
+
+	// And refund the user's deducted quota
+	mockRepo.On("RefundUserQuota", uint(1), 1).Return(nil)
+
+	res, err := svc.SummarizeArticles(context.Background(), "valid-key", []string{ts.URL})
+	assert.NoError(t, err)
+	assert.Len(t, res, 1)
+	assert.Equal(t, ai.ProviderNameLocalFallback, res[0].Source)
+	assert.Contains(t, res[0].Summary, "[Pemberitahuan Sistem]")
+
+	mockRepo.AssertExpectations(t)
+	mockAI.AssertExpectations(t)
+}
+
+func TestAnswerQuestion_LocalFallbackRefundsQuota(t *testing.T) {
+	mockRepo := new(MockRepository)
+	mockAI := new(MockAIService)
+	svc := NewNewsService(mockRepo, mockAI)
+
+	user := &models.User{Quota: 10}
+	user.ID = 1
+	mockRepo.On("GetUserByKey", "valid-key").Return(user, nil)
+	mockRepo.On("DeductUserQuota", uint(1), 1).Return(true, nil)
+	mockRepo.On("RefundUserQuota", uint(1), 1).Return(nil)
+
+	cachedArticle := models.Article{
+		Title:   "Judul Berita",
+		Content: "Isi berita lengkap terkait topik pertanyaan.",
+		URL:     "https://kompas.com/berita-1",
+	}
+	mockRepo.On("GetCachedArticles", "https://kompas.com/berita-1").Return([]models.Article{cachedArticle}, nil)
+
+	fallbackMsg := "[Pemberitahuan Sistem] Layanan tanya jawab AI sedang tidak dapat memproses jawaban."
+	mockAI.On("AnswerQuestion", mock.Anything, mock.Anything, mock.Anything).Return(fallbackMsg, ai.ProviderNameLocalFallback, nil)
+
+	res, err := svc.AnswerQuestion(context.Background(), "valid-key", models.NewsQARequest{
+		Question: "Apa isi berita?",
+		URLs:     []string{"https://kompas.com/berita-1"},
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, ai.ProviderNameLocalFallback, res.Source)
+	assert.Contains(t, res.Answer, "[Pemberitahuan Sistem]")
+
+	mockRepo.AssertExpectations(t)
+	mockAI.AssertExpectations(t)
+}
+
+func TestCompareArticles_LocalFallbackRefundsQuota(t *testing.T) {
+	mockRepo := new(MockRepository)
+	mockAI := new(MockAIService)
+	svc := NewNewsService(mockRepo, mockAI)
+
+	user := &models.User{Quota: 10}
+	user.ID = 1
+	mockRepo.On("GetUserByKey", "valid-key").Return(user, nil)
+	mockRepo.On("DeductUserQuota", uint(1), 1).Return(true, nil)
+	mockRepo.On("RefundUserQuota", uint(1), 1).Return(nil)
+
+	art1 := models.Article{Title: "Berita A", URL: "https://kompas.com/a", Content: "Konten berita A"}
+	art2 := models.Article{Title: "Berita B", URL: "https://detik.com/b", Content: "Konten berita B"}
+	mockRepo.On("GetCachedArticles", "https://kompas.com/a").Return([]models.Article{art1}, nil)
+	mockRepo.On("GetCachedArticles", "https://detik.com/b").Return([]models.Article{art2}, nil)
+
+	fallbackReport := &models.NewsCompareResponse{
+		Topic: "Analisis Komparasi Sementara Tidak Tersedia",
+	}
+	mockAI.On("AnalyzeBias", mock.Anything, mock.Anything).Return(fallbackReport, ai.ProviderNameLocalFallback, nil)
+
+	report, err := svc.CompareArticles(context.Background(), "valid-key", models.NewsCompareRequest{
+		URLs: []string{"https://kompas.com/a", "https://detik.com/b"},
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, ai.ProviderNameLocalFallback, report.Provider)
+
+	mockRepo.AssertExpectations(t)
+	mockAI.AssertExpectations(t)
+}
+
+func TestGetOrProcessArticle_BypassesLegacyFallbackCache(t *testing.T) {
+	mockRepo := new(MockRepository)
+	mockAI := new(MockAIService)
+	svc := NewNewsService(mockRepo, mockAI)
+
+	targetURL := "https://kompas.com/legacy-error"
+	// Existing legacy row corrupted by fallback notice
+	legacyCorruptedArticle := models.Article{
+		Title:      "Judul Asli Berita",
+		URL:        targetURL,
+		Content:    "Konten asli berita yang sudah berhasil discrape sebelumnya.",
+		Summary:    "[Pemberitahuan Sistem] Layanan AI sementara tidak dapat...",
+		AIProvider: "Local-Fallback",
+	}
+
+	// 1. Initial L2 check returns legacy corrupted row -> Must be BYPASSED
+	// 2. Singleflight double-check returns same row -> Must also be BYPASSED
+	mockRepo.On("GetCachedArticles", targetURL).Return([]models.Article{legacyCorruptedArticle}, nil)
+
+	// Since AI has recovered, cloud AI returns real summary
+	realSummary := "Ringkasan akurat yang dibuat oleh model Groq."
+	mockAI.On("Summarize", mock.Anything, legacyCorruptedArticle.Content).Return(realSummary, "Groq", nil)
+
+	// It must overwrite the database with real summary and real provider
+	mockRepo.On("BatchInsertArticles", mock.MatchedBy(func(arts []models.Article) bool {
+		if len(arts) != 1 {
+			return false
+		}
+		return arts[0].Summary == realSummary && arts[0].AIProvider == "Groq"
+	})).Return(nil)
+
+	user := &models.User{Quota: 10}
+	user.ID = 1
+	mockRepo.On("GetUserByKey", "valid-key").Return(user, nil)
+	mockRepo.On("DeductUserQuota", uint(1), 1).Return(true, nil)
+
+	res, err := svc.SummarizeArticles(context.Background(), "valid-key", []string{targetURL})
+	assert.NoError(t, err)
+	assert.Len(t, res, 1)
+	assert.Equal(t, realSummary, res[0].Summary)
+	assert.Equal(t, "Groq", res[0].Source)
+
+	mockRepo.AssertExpectations(t)
+	mockAI.AssertExpectations(t)
 }
