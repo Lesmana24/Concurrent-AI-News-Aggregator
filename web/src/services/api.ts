@@ -130,7 +130,8 @@ export const api = {
     onToken: (token: string) => void,
     onDone: (data: { answer: string; citations: string[]; provider: string }) => void,
     onError: (err: Error) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onReset?: () => void
   ) {
     try {
       const res = await fetch(`${API_BASE}/news/qa/stream`, {
@@ -178,6 +179,8 @@ export const api = {
             const rawData = cleanLine.slice(5)
             if (currentEvent === 'token') {
               onToken(rawData)
+            } else if (currentEvent === 'reset') {
+              onReset?.()
             } else if (currentEvent === 'done') {
               try {
                 const parsed = JSON.parse(rawData.trim())
@@ -186,7 +189,12 @@ export const api = {
                 onDone({ answer: '', citations: [], provider: '' })
               }
             } else if (currentEvent === 'error') {
-              throw new Error(rawData.trim())
+              let errMsg = rawData.trim()
+              try {
+                const parsed = JSON.parse(errMsg)
+                if (parsed.error) errMsg = parsed.error
+              } catch {}
+              throw new Error(errMsg)
             }
           }
         }

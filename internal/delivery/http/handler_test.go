@@ -20,6 +20,7 @@ import (
 
 type mockNewsService struct {
 	summarizeFunc func(ctx context.Context, apiKey string, urls []string) ([]models.ArticleResponse, error)
+	streamFunc    func(ctx context.Context, apiKey string, req models.NewsQARequest, outChan chan<- string) (string, []string, error)
 }
 
 func (m *mockNewsService) SummarizeArticles(ctx context.Context, apiKey string, urls []string) ([]models.ArticleResponse, error) {
@@ -34,6 +35,9 @@ func (m *mockNewsService) AnswerQuestion(ctx context.Context, apiKey string, req
 }
 
 func (m *mockNewsService) AnswerQuestionStream(ctx context.Context, apiKey string, req models.NewsQARequest, outChan chan<- string) (string, []string, error) {
+	if m.streamFunc != nil {
+		return m.streamFunc(ctx, apiKey, req, outChan)
+	}
 	return "", nil, nil
 }
 
@@ -66,6 +70,7 @@ func setupTestRouter(svc service.NewsService) *gin.Engine {
 	r := gin.New()
 	handler := NewNewsHandler(svc)
 	r.POST("/api/v1/summarize", handler.Summarize)
+	r.POST("/api/v1/news/qa/stream", handler.QAStream)
 	return r
 }
 
@@ -220,5 +225,82 @@ func TestSummarize_InternalServerError_Returns500(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+type closeNotifyingRecorder struct {
+	*httptest.ResponseRecorder
+	closed chan bool
+}
+
+func newCloseNotifyingRecorder() *closeNotifyingRecorder {
+	return &closeNotifyingRecorder{
+		ResponseRecorder: httptest.NewRecorder(),
+		closed:           make(chan bool, 1),
+	}
+}
+
+func (c *closeNotifyingRecorder) CloseNotify() <-chan bool {
+	return c.closed
+}
+
+func TestQAStream_EmitsResetEventOnFailover(t *testing.T) {
+	mockSvc := &mockNewsService{
+		streamFunc: func(ctx context.Context, apiKey string, req models.NewsQARequest, outChan chan<- string) (string, []string, error) {
+			assert.Equal(t, "Apa kabar?", req.Question)
+			// Emit initial token, then failover reset, then fresh token
+			outChan <- "Sebagian teks terpotong"
+			outChan <- ai.StreamControlReset
+			outChan <- "Jawaban bersih final"
+			return "NVIDIA NIM", []string{"https://example.com/source"}, nil
+		},
+	}
+
+	router := setupTestRouter(mockSvc)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"question": "Apa kabar?",
+	})
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/news/qa/stream", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := newCloseNotifyingRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/event-stream")
+
+	responseBody := w.Body.String()
+	assert.Contains(t, responseBody, "event:token\ndata:Sebagian teks terpotong\n\n")
+	assert.Contains(t, responseBody, "event:reset\ndata:{\"reason\":\"provider_failover\",\"status\":\"reset\"}\n\n")
+	assert.Contains(t, responseBody, "event:token\ndata:Jawaban bersih final\n\n")
+	assert.Contains(t, responseBody, "event:done\n")
+	assert.Contains(t, responseBody, "NVIDIA NIM")
+}
+
+func TestQAStream_ErrorSuppressesDoneEvent(t *testing.T) {
+	mockSvc := &mockNewsService{
+		streamFunc: func(ctx context.Context, apiKey string, req models.NewsQARequest, outChan chan<- string) (string, []string, error) {
+			outChan <- "Beberapa token awal"
+			return "", nil, errors.New("all AI providers failed: [Groq]: timeout")
+		},
+	}
+
+	router := setupTestRouter(mockSvc)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"question": "Pertanyaan gagal?",
+	})
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/news/qa/stream", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := newCloseNotifyingRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	responseBody := w.Body.String()
+
+	assert.Contains(t, responseBody, "event:error\n")
+	assert.Contains(t, responseBody, "all AI providers failed")
+	assert.NotContains(t, responseBody, "event:done\n", "When stream errors out, event:done must NEVER be emitted")
 }
 

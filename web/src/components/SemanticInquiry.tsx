@@ -134,7 +134,11 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
           setQaError(err.message)
         }
       },
-      controller.signal
+      controller.signal,
+      () => {
+        // Reset accumulated partial answer upon AI provider failover
+        setStreamedAnswer('')
+      }
     )
   }
 

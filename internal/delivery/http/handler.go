@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"news-aggregator/internal/ai"
 	"news-aggregator/internal/cache"
 	"news-aggregator/internal/clustering"
 	"news-aggregator/internal/crawler"
@@ -237,6 +238,14 @@ func (h *NewsHandler) QAStream(c *gin.Context) {
 			return false
 		case token, ok := <-tokenChan:
 			if !ok {
+				// Double-check if there was an error in errChan before declaring completion
+				select {
+				case err := <-errChan:
+					c.SSEvent("error", gin.H{"error": err.Error()})
+					return false
+				default:
+				}
+
 				c.SSEvent("done", gin.H{
 					"status":    "completed",
 					"provider":  resultProvider,
@@ -244,6 +253,12 @@ func (h *NewsHandler) QAStream(c *gin.Context) {
 				})
 				return false
 			}
+
+			if token == ai.StreamControlReset {
+				c.SSEvent("reset", gin.H{"status": "reset", "reason": "provider_failover"})
+				return true
+			}
+
 			c.SSEvent("token", token)
 			return true
 		case <-c.Request.Context().Done():

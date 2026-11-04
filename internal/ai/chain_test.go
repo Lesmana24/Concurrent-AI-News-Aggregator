@@ -188,3 +188,118 @@ func TestFallbackChain_AnalyzeBias_SuccessAndFailover(t *testing.T) {
 	assert.True(t, p1.called)
 	assert.True(t, p2.called)
 }
+
+type mockStreamProvider struct {
+	name       string
+	configured bool
+	tokens     []string
+	err        error
+	called     bool
+}
+
+func (m *mockStreamProvider) Name() string { return m.name }
+func (m *mockStreamProvider) IsConfigured() bool { return m.configured }
+func (m *mockStreamProvider) Summarize(ctx context.Context, text string) (string, error) { return "", nil }
+func (m *mockStreamProvider) AnswerQuestion(ctx context.Context, contextArticles, question string) (string, error) { return "", nil }
+func (m *mockStreamProvider) AnswerQuestionStream(ctx context.Context, contextArticles, question string, outChan chan<- string) error {
+	m.called = true
+	for _, t := range m.tokens {
+		outChan <- t
+	}
+	return m.err
+}
+func (m *mockStreamProvider) AnalyzeBias(ctx context.Context, articles []ArticleForAnalysis) (*models.NewsCompareResponse, error) {
+	return nil, nil
+}
+
+func TestFallbackChain_QAStream_MidStreamFailureEmitsResetAndRecovers(t *testing.T) {
+	// P1 emits 2 tokens and then crashes mid-stream
+	p1 := &mockStreamProvider{
+		name:       "Groq",
+		configured: true,
+		tokens:     []string{"Token 1 ", "Token 2 "},
+		err:        errors.New("connection reset by peer"),
+	}
+	// P2 succeeds and provides the complete fresh answer
+	p2 := &mockStreamProvider{
+		name:       "NVIDIA NIM",
+		configured: true,
+		tokens:     []string{"Jawaban ", "bersih ", "dari ", "NVIDIA."},
+		err:        nil,
+	}
+
+	chain := NewFallbackChain(p1, p2)
+	outChan := make(chan string, 10)
+
+	go func() {
+		defer close(outChan)
+		provider, err := chain.AnswerQuestionStream(context.Background(), "konteks", "pertanyaan", outChan)
+		assert.NoError(t, err)
+		assert.Equal(t, "NVIDIA NIM", provider)
+	}()
+
+	var receivedTokens []string
+	var resetCount int
+	var reconstructedAnswer string
+
+	for token := range outChan {
+		receivedTokens = append(receivedTokens, token)
+		if token == StreamControlReset {
+			resetCount++
+			reconstructedAnswer = "" // Client clears previous text on reset
+		} else {
+			reconstructedAnswer += token
+		}
+	}
+
+	assert.Equal(t, 1, resetCount, "Exactly 1 StreamControlReset must be emitted when P1 fails mid-stream")
+	assert.Contains(t, receivedTokens, StreamControlReset)
+	assert.Equal(t, "Jawaban bersih dari NVIDIA.", reconstructedAnswer, "Reconstructed answer after reset must match clean P2 answer")
+	assert.True(t, p1.called)
+	assert.True(t, p2.called)
+}
+
+func TestFallbackChain_QAStream_EarlyFailureSeamlessFailover(t *testing.T) {
+	// P1 fails immediately with 0 tokens emitted
+	p1 := &mockStreamProvider{
+		name:       "Groq",
+		configured: true,
+		tokens:     nil,
+		err:        errors.New("429 rate limit exceeded"),
+	}
+	// P2 succeeds
+	p2 := &mockStreamProvider{
+		name:       "NVIDIA NIM",
+		configured: true,
+		tokens:     []string{"Langsung ", "sukses."},
+		err:        nil,
+	}
+
+	chain := NewFallbackChain(p1, p2)
+	outChan := make(chan string, 10)
+
+	go func() {
+		defer close(outChan)
+		provider, err := chain.AnswerQuestionStream(context.Background(), "konteks", "pertanyaan", outChan)
+		assert.NoError(t, err)
+		assert.Equal(t, "NVIDIA NIM", provider)
+	}()
+
+	var receivedTokens []string
+	var hasReset bool
+	var answer string
+
+	for token := range outChan {
+		receivedTokens = append(receivedTokens, token)
+		if token == StreamControlReset {
+			hasReset = true
+		} else {
+			answer += token
+		}
+	}
+
+	assert.False(t, hasReset, "No reset event should be emitted if P1 failed before emitting any token")
+	assert.Equal(t, "Langsung sukses.", answer)
+	assert.True(t, p1.called)
+	assert.True(t, p2.called)
+}
