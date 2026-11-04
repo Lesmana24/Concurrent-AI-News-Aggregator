@@ -87,12 +87,10 @@ func NewHarvesterEngine(cfg Config, newsSvc service.NewsService, repo CrawlerRep
 	}
 
 	return &HarvesterEngine{
-		config:      cfg,
-		newsService: newsSvc,
-		repo:        repo,
-		httpClient: &http.Client{
-			Timeout: cfg.Timeout,
-		},
+		config:       cfg,
+		newsService:  newsSvc,
+		repo:         repo,
+		httpClient:   service.NewSafeHTTPClient(cfg.Timeout),
 		systemAPIKey: systemKey,
 		stats: CrawlStats{
 			ActiveFeedCount: activeCount,
@@ -295,7 +293,8 @@ func (e *HarvesterEngine) fetchFeed(ctx context.Context, source FeedSource) ([]F
 		return nil, fmt.Errorf("feed server returned status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit feed response body to 5 MB to prevent decompression bombs / memory exhaustion
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 5*1024*1024))
 	if err != nil {
 		return nil, err
 	}

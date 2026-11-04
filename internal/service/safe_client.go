@@ -30,14 +30,19 @@ func NewSafeHTTPClient(timeout time.Duration) *http.Client {
 
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			allowInternal := os.Getenv("ALLOW_INTERNAL_URLS") == "true"
-			if allowInternal {
-				return dialer.DialContext(ctx, network, addr)
-			}
-
 			host, port, err := net.SplitHostPort(addr)
 			if err != nil {
 				return nil, fmt.Errorf("invalid address '%s': %w", addr, err)
+			}
+
+			// Block connection to dangerous non-HTTP/management ports
+			if isDangerousPort(port) {
+				return nil, fmt.Errorf("connection to dangerous port '%s' is blocked (anti-protocol smuggling)", port)
+			}
+
+			allowInternal := os.Getenv("ALLOW_INTERNAL_URLS") == "true"
+			if allowInternal {
+				return dialer.DialContext(ctx, network, addr)
 			}
 
 			// If connecting directly to an IP literal
@@ -96,9 +101,23 @@ func NewSafeHTTPClient(timeout time.Duration) *http.Client {
 				return fmt.Errorf("stopped after 5 redirects")
 			}
 
-			allowInternal := os.Getenv("ALLOW_INTERNAL_URLS") == "true"
-			if allowInternal {
-				return nil
+			// Cross-origin header stripping to prevent credential leakage
+			if len(via) > 0 {
+				initialOrigin := strings.ToLower(via[0].URL.Host)
+				if initialOrigin == "" {
+					initialOrigin = strings.ToLower(via[0].URL.Hostname())
+				}
+				currentOrigin := strings.ToLower(req.URL.Host)
+				if currentOrigin == "" {
+					currentOrigin = strings.ToLower(req.URL.Hostname())
+				}
+
+				if currentOrigin != initialOrigin {
+					req.Header.Del("Authorization")
+					req.Header.Del("X-API-Key")
+					req.Header.Del("Cookie")
+					req.Header.Del("Proxy-Authorization")
+				}
 			}
 
 			scheme := strings.ToLower(req.URL.Scheme)
@@ -106,15 +125,24 @@ func NewSafeHTTPClient(timeout time.Duration) *http.Client {
 				return fmt.Errorf("redirect to unsupported scheme '%s' blocked", scheme)
 			}
 
+			port := req.URL.Port()
+			if port != "" && isDangerousPort(port) {
+				return fmt.Errorf("redirect to dangerous port '%s' blocked (anti-protocol smuggling)", port)
+			}
+
+			allowInternal := os.Getenv("ALLOW_INTERNAL_URLS") == "true"
+			if allowInternal {
+				return nil
+			}
+
 			host := strings.ToLower(req.URL.Hostname())
 			if isRestrictedHost(host) {
 				return fmt.Errorf("redirect to restricted host '%s' blocked", host)
 			}
 
-			if ip := net.ParseIP(host); ip != nil {
-				if isRestrictedIP(ip) {
-					return fmt.Errorf("redirect to restricted IP '%s' blocked", ip.String())
-				}
+			// Validate IP addresses (supports direct IP literals and resolves hostnames)
+			if err := validateHostIP(host); err != nil {
+				return fmt.Errorf("redirect blocked by security policy: %w", err)
 			}
 
 			return nil
@@ -122,5 +150,32 @@ func NewSafeHTTPClient(timeout time.Duration) *http.Client {
 	}
 
 	return client
+}
+
+// isDangerousPort detects commonly targeted non-HTTP ports to prevent protocol smuggling
+// and internal port scanning (e.g. Redis, Postgres, SSH, Docker, SMTP).
+func isDangerousPort(port string) bool {
+	switch port {
+	case "21", // FTP
+		"22",    // SSH
+		"23",    // Telnet
+		"25",    // SMTP
+		"53",    // DNS
+		"110",   // POP3
+		"143",   // IMAP
+		"445",   // SMB
+		"2375",  // Docker plaintext
+		"2376",  // Docker TLS
+		"2379",  // Etcd client
+		"2380",  // Etcd peer
+		"3306",  // MySQL
+		"5432",  // PostgreSQL
+		"6379",  // Redis
+		"11211", // Memcached
+		"27017": // MongoDB
+		return true
+	default:
+		return false
+	}
 }
 

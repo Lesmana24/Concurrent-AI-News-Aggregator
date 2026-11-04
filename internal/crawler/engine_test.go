@@ -80,6 +80,7 @@ func (m *mockNewsService) WithEmbedding(e ai.EmbeddingService) service.NewsServi
 }
 
 func TestHarvesterEngine_DeduplicationAndIndexing(t *testing.T) {
+	t.Setenv("ALLOW_INTERNAL_URLS", "true")
 	// Create mock RSS server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
@@ -166,6 +167,7 @@ func TestHarvesterEngine_DeduplicationAndIndexing(t *testing.T) {
 }
 
 func TestHarvesterEngine_FeedServerFailureGraceful(t *testing.T) {
+	t.Setenv("ALLOW_INTERNAL_URLS", "true")
 	// Create server that returns 500
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -197,4 +199,40 @@ func TestHarvesterEngine_FeedServerFailureGraceful(t *testing.T) {
 	stats := engine.GetStats()
 	assert.Equal(t, int64(1), stats.TotalRuns)
 	assert.Equal(t, int64(1), stats.TotalErrors)
+}
+
+func TestHarvesterEngine_BlocksPrivateAndRedirectFeeds(t *testing.T) {
+	// Ensure internal URLs are strictly disallowed
+	t.Setenv("ALLOW_INTERNAL_URLS", "false")
+
+	// Server that redirects to AWS/cloud metadata IP
+	tsRedirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://169.254.169.254/latest/meta-data/", http.StatusFound)
+	}))
+	defer tsRedirect.Close()
+
+	mockRepo := new(mockCrawlerRepo)
+	systemUser := &models.User{}
+	systemUser.ID = 1
+	mockRepo.On("EnsureSystemUser", mock.Anything, mock.Anything, mock.Anything).Return(systemUser, nil)
+	mockNews := new(mockNewsService)
+
+	cfg := Config{
+		Interval: time.Hour,
+		Sources: []FeedSource{
+			{ID: "direct-private", Name: "Private Feed", URL: "http://127.0.0.1:5432/feed", Enabled: true},
+			{ID: "redirect-metadata", Name: "Redirect Feed", URL: tsRedirect.URL, Enabled: true},
+		},
+	}
+
+	engine := NewHarvesterEngine(cfg, mockNews, mockRepo)
+	result, err := engine.CrawlAll(context.Background())
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 0, result.Fetched)
+	// Both sources must fail and record error
+	assert.Len(t, result.Errors, 2)
+	assert.Contains(t, result.Errors[0], "blocked")
+	assert.Contains(t, result.Errors[1], "blocked")
 }
