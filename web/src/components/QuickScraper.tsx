@@ -134,7 +134,7 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
   const handleToggleArticleWatchlist = (art: Article) => {
     if (!onToggleWatchlist) return
     onToggleWatchlist({
-      id: `art-${art.id}-${art.url}`,
+      id: `art-${art.id ?? art.url}-${art.url}`,
       title: art.title,
       url: art.url,
       source: art.source,
@@ -359,7 +359,7 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
               const bookmarked = isWatched ? isWatched(art.url) : false
               return (
                 <article
-                  key={art.id}
+                  key={art.id ?? art.url}
                   className="group p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900/80 hover:bg-slate-50 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800/90 hover:border-amber-500/40 transition-all shadow-xs hover:shadow-md dark:shadow-md flex flex-col sm:flex-row gap-4 sm:gap-5 items-start"
                 >
                   {/* Article Thumbnail */}

@@ -2,7 +2,8 @@ package models
 
 // SummarizeRequest defines the input for the summarize endpoint
 type SummarizeRequest struct {
-	URLs []string `json:"urls" binding:"required,min=1,dive,url"`
+	URLs []string `json:"urls" binding:"omitempty,dive,url"`
+	URL  string   `json:"url" binding:"omitempty,url"`
 }
 
 // NewsQARequest defines the input for the news Q&A endpoint

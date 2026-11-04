@@ -114,12 +114,22 @@ func (h *NewsHandler) Health(c *gin.Context) {
 func (h *NewsHandler) Summarize(c *gin.Context) {
 	var req models.SummarizeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: urls must be a list of valid URLs or url must be a valid URL"})
+		return
+	}
+
+	urls := req.URLs
+	if len(urls) == 0 && strings.TrimSpace(req.URL) != "" {
+		urls = []string{strings.TrimSpace(req.URL)}
+	}
+
+	if len(urls) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: urls must be a non-empty list of valid URLs"})
 		return
 	}
 
 	apiKey := c.GetHeader("X-API-KEY")
-	res, err := h.service.SummarizeArticles(c.Request.Context(), apiKey, req.URLs)
+	res, err := h.service.SummarizeArticles(c.Request.Context(), apiKey, urls)
 	if err != nil {
 		if strings.Contains(err.Error(), "validation failed") || strings.Contains(err.Error(), "no valid") {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

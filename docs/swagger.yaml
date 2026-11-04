@@ -40,6 +40,8 @@ definitions:
     type: object
   models.ArticleResponse:
     properties:
+      image_url:
+        type: string
       source:
         type: string
       summary:
@@ -61,12 +63,16 @@ definitions:
         type: number
       id:
         type: integer
+      image_url:
+        type: string
       last_updated:
         type: string
       outlets:
         items:
           type: string
         type: array
+      secondary_image_url:
+        type: string
       summary:
         type: string
       title:
@@ -158,11 +164,9 @@ definitions:
         items:
           type: string
         maxItems: 5
-        minItems: 1
         type: array
     required:
     - question
-    - urls
     type: object
   models.NewsQAResponse:
     properties:
@@ -194,13 +198,12 @@ definitions:
     type: object
   models.SummarizeRequest:
     properties:
+      url:
+        type: string
       urls:
         items:
           type: string
-        minItems: 1
         type: array
-    required:
-    - urls
     type: object
   models.TrendingClusterItem:
     properties:
@@ -210,12 +213,16 @@ definitions:
         type: number
       id:
         type: integer
+      image_url:
+        type: string
       last_updated:
         type: string
       outlets:
         items:
           type: string
         type: array
+      secondary_image_url:
+        type: string
       summary:
         type: string
       title:

@@ -67,13 +67,20 @@ export const api = {
         'Content-Type': 'application/json',
         'X-API-KEY': apiKey || DEFAULT_DEMO_KEY,
       },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ urls: [url] }),
     })
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       throw new Error(err.error || `Failed to summarize URL (${res.status})`)
     }
-    return res.json()
+    const data = await res.json()
+    if (Array.isArray(data)) {
+      if (data.length === 0) {
+        throw new Error('Tidak ada artikel yang berhasil diringkas')
+      }
+      return data[0]
+    }
+    return data
   },
 
   async compareNews(apiKey: string, urls: string[]): Promise<NewsCompareResponse> {

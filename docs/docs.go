@@ -1069,6 +1069,9 @@ const docTemplate = `{
         "models.ArticleResponse": {
             "type": "object",
             "properties": {
+                "image_url": {
+                    "type": "string"
+                },
                 "source": {
                     "type": "string"
                 },
@@ -1101,6 +1104,9 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
+                "image_url": {
+                    "type": "string"
+                },
                 "last_updated": {
                     "type": "string"
                 },
@@ -1109,6 +1115,9 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "secondary_image_url": {
+                    "type": "string"
                 },
                 "summary": {
                     "type": "string"
@@ -1234,8 +1243,7 @@ const docTemplate = `{
         "models.NewsQARequest": {
             "type": "object",
             "required": [
-                "question",
-                "urls"
+                "question"
             ],
             "properties": {
                 "question": {
@@ -1246,7 +1254,6 @@ const docTemplate = `{
                 "urls": {
                     "type": "array",
                     "maxItems": 5,
-                    "minItems": 1,
                     "items": {
                         "type": "string"
                     }
@@ -1298,13 +1305,12 @@ const docTemplate = `{
         },
         "models.SummarizeRequest": {
             "type": "object",
-            "required": [
-                "urls"
-            ],
             "properties": {
+                "url": {
+                    "type": "string"
+                },
                 "urls": {
                     "type": "array",
-                    "minItems": 1,
                     "items": {
                         "type": "string"
                     }
@@ -1323,6 +1329,9 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
+                "image_url": {
+                    "type": "string"
+                },
                 "last_updated": {
                     "type": "string"
                 },
@@ -1331,6 +1340,9 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "secondary_image_url": {
+                    "type": "string"
                 },
                 "summary": {
                     "type": "string"
