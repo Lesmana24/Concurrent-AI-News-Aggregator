@@ -14,6 +14,7 @@ type CacheService interface {
 	Get(ctx context.Context, key string) (string, error)
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error
 	Delete(ctx context.Context, key string) error
+	Incr(ctx context.Context, key string, expiration time.Duration) (int64, error)
 	IsAvailable() bool
 	Close() error
 }
@@ -92,6 +93,47 @@ func (r *RedisCache) Delete(ctx context.Context, key string) error {
 		return nil
 	}
 	return r.client.Del(ctx, key).Err()
+}
+
+// Incr atomically increments the integer value of a key by one in a single atomic round-trip.
+// If the key does not exist, it is initialized to 1 and assigned the provided expiration TTL.
+// If the key exists without an expiry, the expiration TTL is guaranteed to be set.
+func (r *RedisCache) Incr(ctx context.Context, key string, expiration time.Duration) (int64, error) {
+	if !r.IsAvailable() {
+		return 0, fmt.Errorf("redis cache unavailable")
+	}
+
+	ttlSec := int(expiration.Seconds())
+	if ttlSec <= 0 {
+		ttlSec = 60
+	}
+
+	luaScript := `
+		local current = redis.call('INCR', KEYS[1])
+		if current == 1 then
+			redis.call('EXPIRE', KEYS[1], ARGV[1])
+		else
+			local ttl = redis.call('TTL', KEYS[1])
+			if ttl == -1 then
+				redis.call('EXPIRE', KEYS[1], ARGV[1])
+			end
+		end
+		return current
+	`
+
+	res, err := r.client.Eval(ctx, luaScript, []string{key}, ttlSec).Result()
+	if err != nil {
+		return 0, err
+	}
+
+	switch v := res.(type) {
+	case int64:
+		return v, nil
+	case int:
+		return int64(v), nil
+	default:
+		return 0, fmt.Errorf("unexpected redis eval return type: %T", res)
+	}
 }
 
 func (r *RedisCache) Close() error {

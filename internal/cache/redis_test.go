@@ -17,6 +17,9 @@ func TestNewRedisCache_DisabledWhenHostEmpty(t *testing.T) {
 	_, err := c.Get(ctx, "test_key")
 	assert.Error(t, err)
 
+	_, err = c.Incr(ctx, "test_key", 10*time.Second)
+	assert.Error(t, err)
+
 	err = c.Set(ctx, "test_key", "value", 10*time.Second)
 	assert.NoError(t, err)
 
