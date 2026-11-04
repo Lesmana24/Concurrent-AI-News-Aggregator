@@ -131,6 +131,7 @@ func TestHarvesterEngine_DeduplicationAndIndexing(t *testing.T) {
 		MaxPerFeed: 5,
 		Timeout:    5 * time.Second,
 		Enabled:    true,
+		SystemKey:  "crawler-system-key",
 		Sources: []FeedSource{
 			{
 				ID:       "test-feed",

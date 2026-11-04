@@ -2,12 +2,15 @@ package crawler
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/service"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +29,7 @@ type Config struct {
 	Timeout    time.Duration
 	Enabled    bool
 	Sources    []FeedSource
+	SystemKey  string
 }
 
 // HarvesterEngine periodically polls news feeds, filters new articles,
@@ -38,6 +42,14 @@ type HarvesterEngine struct {
 	stats        CrawlStats
 	mu           sync.RWMutex
 	systemAPIKey string
+}
+
+func generateSecureToken(prefix string) string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%s-%s", prefix, hex.EncodeToString(b))
 }
 
 // NewHarvesterEngine creates a new autonomous news harvester.
@@ -55,7 +67,14 @@ func NewHarvesterEngine(cfg Config, newsSvc service.NewsService, repo CrawlerRep
 		cfg.Sources = DefaultSources()
 	}
 
-	systemKey := "crawler-system-key"
+	systemKey := strings.TrimSpace(cfg.SystemKey)
+	if systemKey == "" {
+		systemKey = strings.TrimSpace(os.Getenv("CRAWLER_SYSTEM_KEY"))
+	}
+	if systemKey == "" {
+		systemKey = generateSecureToken("crawler")
+	}
+
 	if repo != nil {
 		_, _ = repo.EnsureSystemUser(systemKey, "crawler@newsaggregator.internal", 999999)
 	}

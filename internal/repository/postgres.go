@@ -376,6 +376,10 @@ func (r *PostgresRepository) EnsureSystemUser(apiKey, email string, defaultQuota
 	var user models.User
 	err := r.db.Where("api_key = ?", apiKey).First(&user).Error
 	if err == nil {
+		if !user.IsSystem {
+			_ = r.db.Model(&user).Update("is_system", true).Error
+			user.IsSystem = true
+		}
 		if user.Quota < 100 {
 			_ = r.db.Model(&user).Update("quota", defaultQuota).Error
 			user.Quota = defaultQuota
@@ -384,9 +388,10 @@ func (r *PostgresRepository) EnsureSystemUser(apiKey, email string, defaultQuota
 	}
 
 	user = models.User{
-		APIKey: apiKey,
-		Email:  email,
-		Quota:  defaultQuota,
+		APIKey:   apiKey,
+		Email:    email,
+		Quota:    defaultQuota,
+		IsSystem: true,
 	}
 	if err := r.db.Create(&user).Error; err != nil {
 		return nil, err

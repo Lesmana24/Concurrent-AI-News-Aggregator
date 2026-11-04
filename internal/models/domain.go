@@ -9,9 +9,10 @@ import (
 
 type User struct {
 	gorm.Model
-	APIKey string `gorm:"uniqueIndex;not null" json:"api_key"`
-	Quota  int    `gorm:"default:100" json:"quota"`
-	Email  string `gorm:"uniqueIndex;not null" json:"email"`
+	APIKey   string `gorm:"uniqueIndex;not null" json:"api_key"`
+	Quota    int    `gorm:"default:100" json:"quota"`
+	Email    string `gorm:"uniqueIndex;not null" json:"email"`
+	IsSystem bool   `gorm:"default:false" json:"is_system"`
 }
 
 type Article struct {

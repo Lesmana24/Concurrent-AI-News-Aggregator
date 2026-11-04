@@ -23,6 +23,12 @@ func APIKeyAuth(svc service.NewsService) gin.HandlerFunc {
 			return
 		}
 
+		if user.IsSystem {
+			c.JSON(http.StatusForbidden, gin.H{"error": "System API keys cannot be used for public API access"})
+			c.Abort()
+			return
+		}
+
 		if user.Quota <= 0 {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Quota exceeded"})
 			c.Abort()

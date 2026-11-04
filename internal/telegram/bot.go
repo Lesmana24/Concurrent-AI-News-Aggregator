@@ -2,6 +2,8 @@ package telegram
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"html"
 	"log/slog"
@@ -11,6 +13,7 @@ import (
 	"news-aggregator/internal/repository"
 	"news-aggregator/internal/scheduler"
 	"news-aggregator/internal/service"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -48,7 +51,14 @@ func NewBotService(token string, newsSvc service.NewsService, repo *repository.P
 
 	slog.Info("Telegram Bot successfully authorized", slog.String("username", bot.Self.UserName))
 
-	systemKey := "telegram-bot-system-key"
+	systemKey := strings.TrimSpace(os.Getenv("TELEGRAM_SYSTEM_KEY"))
+	if systemKey == "" {
+		systemKey = strings.TrimSpace(os.Getenv("TELEGRAM_BOT_SYSTEM_KEY"))
+	}
+	if systemKey == "" {
+		systemKey = generateSecureToken("telegram")
+	}
+
 	if repo != nil {
 		_, _ = repo.EnsureSystemUser(systemKey, "telegram-bot@newsaggregator.internal", 999999)
 	}
@@ -636,4 +646,12 @@ func (b *BotService) PushNotification(ctx context.Context, title, body string) e
 func stripHTML(s string) string {
 	re := regexp.MustCompile("<[^>]*>")
 	return re.ReplaceAllString(s, "")
+}
+
+func generateSecureToken(prefix string) string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%s-%s", prefix, hex.EncodeToString(b))
 }
