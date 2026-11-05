@@ -43,6 +43,27 @@ type UserResponse struct {
 	Quota  int    `json:"quota"`
 }
 
+type RegisterUserRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+type RegisterUserResponse struct {
+	ID        uint      `json:"id"`
+	Email     string    `json:"email"`
+	APIKey    string    `json:"api_key"`
+	Quota     int       `json:"quota"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type RotateAPIKeyResponse struct {
+	ID        uint      `json:"id"`
+	Email     string    `json:"email"`
+	OldAPIKey string    `json:"old_api_key"`
+	NewAPIKey string    `json:"new_api_key"`
+	Quota     int       `json:"quota"`
+	RotatedAt time.Time `json:"rotated_at"`
+}
+
 type ArticleResponse struct {
 	Title    string `json:"title"`
 	URL      string `json:"url"`

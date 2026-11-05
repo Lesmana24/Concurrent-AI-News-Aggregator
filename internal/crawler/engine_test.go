@@ -71,6 +71,14 @@ func (m *mockNewsService) GetUser(apiKey string) (*models.User, error) {
 	return nil, nil
 }
 
+func (m *mockNewsService) RegisterUser(ctx context.Context, email string) (*models.User, error) {
+	return nil, nil
+}
+
+func (m *mockNewsService) RotateAPIKey(ctx context.Context, currentAPIKey string) (string, string, *models.User, error) {
+	return "", "", nil, nil
+}
+
 func (m *mockNewsService) WithCache(c cache.CacheService) service.NewsService {
 	return m
 }

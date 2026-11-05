@@ -2,6 +2,8 @@ import type {
   Article,
   ClusterDetailResponse,
   NewsCompareResponse,
+  RegisterUserResponse,
+  RotateAPIKeyResponse,
   SemanticSearchResult,
   TrendingClusterResponse,
   UserMe,
@@ -23,6 +25,34 @@ export const api = {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    return res.json()
+  },
+
+  async registerUser(email: string): Promise<RegisterUserResponse> {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || `Registration failed (${res.status})`)
+    }
+    return res.json()
+  },
+
+  async rotateApiKey(currentKey: string): Promise<RotateAPIKeyResponse> {
+    const res = await fetch(`${API_BASE}/user/rotate-key`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-KEY': currentKey || DEFAULT_DEMO_KEY,
+      },
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || `Key rotation failed (${res.status})`)
     }
     return res.json()
   },

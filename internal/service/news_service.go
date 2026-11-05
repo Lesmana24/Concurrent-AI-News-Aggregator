@@ -2,13 +2,16 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"news-aggregator/internal/ai"
 	"news-aggregator/internal/cache"
@@ -22,8 +25,18 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+var (
+	ErrEmailAlreadyRegistered = errors.New("email is already registered")
+	ErrCannotRotateSystemKey  = errors.New("system account API keys cannot be rotated")
+	ErrInvalidEmail           = errors.New("invalid email address format")
+	ErrUserNotFound           = errors.New("user not found")
+)
+
 type Repository interface {
 	GetUserByKey(apiKey string) (*models.User, error)
+	GetUserByEmail(email string) (*models.User, error)
+	CreateUser(email, apiKey string, initialQuota int) (*models.User, error)
+	RotateUserAPIKey(userID uint, newAPIKey string) error
 	UpdateUserQuota(userID uint, newQuota int) error
 	DeductUserQuota(userID uint, amount int) (bool, error)
 	RefundUserQuota(userID uint, amount int) error
@@ -44,6 +57,8 @@ type NewsService interface {
 	GlobalQA(ctx context.Context, apiKey string, req models.GlobalQARequest) (*models.GlobalQAResponse, error)
 	CompareArticles(ctx context.Context, apiKey string, req models.NewsCompareRequest) (*models.NewsCompareResponse, error)
 	GetUser(apiKey string) (*models.User, error)
+	RegisterUser(ctx context.Context, email string) (*models.User, error)
+	RotateAPIKey(ctx context.Context, currentAPIKey string) (oldKey string, newKey string, user *models.User, err error)
 	WithCache(c cache.CacheService) NewsService
 	WithEmbedding(emb ai.EmbeddingService) NewsService
 }
@@ -818,4 +833,76 @@ func extractOutletName(rawURL string) string {
 		}
 	}
 	return hostname
+}
+
+func generateUserAPIKey() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("na_live_%d", time.Now().UnixNano())
+	}
+	return "na_live_" + hex.EncodeToString(b)
+}
+
+func isValidEmail(email string) bool {
+	addr, err := mail.ParseAddress(strings.TrimSpace(email))
+	if err != nil {
+		return false
+	}
+	parts := strings.Split(addr.Address, "@")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return false
+	}
+	return strings.Contains(parts[1], ".")
+}
+
+func (s *newsService) RegisterUser(ctx context.Context, email string) (*models.User, error) {
+	trimmedEmail := strings.ToLower(strings.TrimSpace(email))
+	if trimmedEmail == "" || !isValidEmail(trimmedEmail) {
+		return nil, ErrInvalidEmail
+	}
+
+	// Check if user already exists
+	existing, err := s.repo.GetUserByEmail(trimmedEmail)
+	if err == nil && existing != nil && existing.ID > 0 {
+		return nil, ErrEmailAlreadyRegistered
+	}
+
+	newKey := generateUserAPIKey()
+	const defaultQuota = 100
+	user, err := s.repo.CreateUser(trimmedEmail, newKey, defaultQuota)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	return user, nil
+}
+
+func (s *newsService) RotateAPIKey(ctx context.Context, currentAPIKey string) (string, string, *models.User, error) {
+	cleanKey := strings.TrimSpace(currentAPIKey)
+	if cleanKey == "" {
+		return "", "", nil, ErrUserNotFound
+	}
+
+	user, err := s.repo.GetUserByKey(cleanKey)
+	if err != nil || user == nil || user.ID == 0 {
+		return "", "", nil, ErrUserNotFound
+	}
+
+	if user.IsSystem {
+		return "", "", nil, ErrCannotRotateSystemKey
+	}
+
+	newKey := generateUserAPIKey()
+	if err := s.repo.RotateUserAPIKey(user.ID, newKey); err != nil {
+		return "", "", nil, fmt.Errorf("failed to rotate user API key: %w", err)
+	}
+
+	// Invalidate cache in Redis if cache service is present
+	if s.cacheSvc != nil {
+		_ = s.cacheSvc.Delete(ctx, fmt.Sprintf("user:%s", cleanKey))
+	}
+
+	oldKey := user.APIKey
+	user.APIKey = newKey
+	return oldKey, newKey, user, nil
 }

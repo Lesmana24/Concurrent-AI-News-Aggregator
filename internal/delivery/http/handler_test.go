@@ -21,6 +21,8 @@ import (
 type mockNewsService struct {
 	summarizeFunc func(ctx context.Context, apiKey string, urls []string) ([]models.ArticleResponse, error)
 	streamFunc    func(ctx context.Context, apiKey string, req models.NewsQARequest, outChan chan<- string) (string, []string, error)
+	registerFunc  func(ctx context.Context, email string) (*models.User, error)
+	rotateFunc    func(ctx context.Context, currentAPIKey string) (string, string, *models.User, error)
 }
 
 func (m *mockNewsService) SummarizeArticles(ctx context.Context, apiKey string, urls []string) ([]models.ArticleResponse, error) {
@@ -28,6 +30,20 @@ func (m *mockNewsService) SummarizeArticles(ctx context.Context, apiKey string, 
 		return m.summarizeFunc(ctx, apiKey, urls)
 	}
 	return nil, nil
+}
+
+func (m *mockNewsService) RegisterUser(ctx context.Context, email string) (*models.User, error) {
+	if m.registerFunc != nil {
+		return m.registerFunc(ctx, email)
+	}
+	return nil, nil
+}
+
+func (m *mockNewsService) RotateAPIKey(ctx context.Context, currentAPIKey string) (string, string, *models.User, error) {
+	if m.rotateFunc != nil {
+		return m.rotateFunc(ctx, currentAPIKey)
+	}
+	return "", "", nil, nil
 }
 
 func (m *mockNewsService) AnswerQuestion(ctx context.Context, apiKey string, req models.NewsQARequest) (*models.NewsQAResponse, error) {
@@ -69,6 +85,8 @@ func setupTestRouter(svc service.NewsService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	handler := NewNewsHandler(svc)
+	r.POST("/api/v1/auth/register", handler.RegisterUser)
+	r.POST("/api/v1/user/rotate-key", handler.RotateAPIKey)
 	r.POST("/api/v1/summarize", handler.Summarize)
 	r.POST("/api/v1/news/qa/stream", handler.QAStream)
 	return r
@@ -304,3 +322,137 @@ func TestQAStream_ErrorSuppressesDoneEvent(t *testing.T) {
 	assert.NotContains(t, responseBody, "event:done\n", "When stream errors out, event:done must NEVER be emitted")
 }
 
+
+
+func TestRegisterUser_Returns201(t *testing.T) {
+	mockSvc := &mockNewsService{
+		registerFunc: func(ctx context.Context, email string) (*models.User, error) {
+			assert.Equal(t, "dev@example.com", email)
+			u := &models.User{
+				Email:  email,
+				APIKey: "na_live_test123",
+				Quota:  100,
+			}
+			u.ID = 1
+			return u, nil
+		},
+	}
+
+	router := setupTestRouter(mockSvc)
+
+	body, _ := json.Marshal(map[string]string{"email": "dev@example.com"})
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.Equal(t, "success", resp["status"])
+	data := resp["data"].(map[string]interface{})
+	assert.Equal(t, "dev@example.com", data["email"])
+	assert.Equal(t, "na_live_test123", data["api_key"])
+	assert.Equal(t, float64(100), data["quota"])
+}
+
+func TestRegisterUser_Duplicate_Returns409(t *testing.T) {
+	mockSvc := &mockNewsService{
+		registerFunc: func(ctx context.Context, email string) (*models.User, error) {
+			return nil, service.ErrEmailAlreadyRegistered
+		},
+	}
+
+	router := setupTestRouter(mockSvc)
+
+	body, _ := json.Marshal(map[string]string{"email": "existing@example.com"})
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), "already registered")
+}
+
+func TestRegisterUser_InvalidEmail_Returns400(t *testing.T) {
+	mockSvc := &mockNewsService{
+		registerFunc: func(ctx context.Context, email string) (*models.User, error) {
+			return nil, service.ErrInvalidEmail
+		},
+	}
+
+	router := setupTestRouter(mockSvc)
+
+	body, _ := json.Marshal(map[string]string{"email": "invalid-email"})
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestRotateAPIKey_Returns200(t *testing.T) {
+	mockSvc := &mockNewsService{
+		rotateFunc: func(ctx context.Context, currentAPIKey string) (string, string, *models.User, error) {
+			assert.Equal(t, "na_live_old", currentAPIKey)
+			u := &models.User{
+				Email:  "dev@example.com",
+				APIKey: "na_live_new",
+				Quota:  90,
+			}
+			u.ID = 1
+			return "na_live_old", "na_live_new", u, nil
+		},
+	}
+
+	router := setupTestRouter(mockSvc)
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/user/rotate-key", nil)
+	req.Header.Set("X-API-KEY", "na_live_old")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.Equal(t, "success", resp["status"])
+	data := resp["data"].(map[string]interface{})
+	assert.Equal(t, "na_live_old", data["old_api_key"])
+	assert.Equal(t, "na_live_new", data["new_api_key"])
+}
+
+func TestRotateAPIKey_SystemUser_Returns403(t *testing.T) {
+	mockSvc := &mockNewsService{
+		rotateFunc: func(ctx context.Context, currentAPIKey string) (string, string, *models.User, error) {
+			return "", "", nil, service.ErrCannotRotateSystemKey
+		},
+	}
+
+	router := setupTestRouter(mockSvc)
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/user/rotate-key", nil)
+	req.Header.Set("X-API-KEY", "crawler-system-key")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "System account")
+}
+
+func TestRotateAPIKey_MissingAuth_Returns401(t *testing.T) {
+	mockSvc := &mockNewsService{}
+	router := setupTestRouter(mockSvc)
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/user/rotate-key", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}

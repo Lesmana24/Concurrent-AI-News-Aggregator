@@ -63,6 +63,34 @@ func (r *PostgresRepository) GetUserByKey(apiKey string) (*models.User, error) {
 	return &user, nil
 }
 
+// GetUserByEmail retrieves a user by email address.
+func (r *PostgresRepository) GetUserByEmail(email string) (*models.User, error) {
+	var user models.User
+	if err := r.db.Where("LOWER(email) = LOWER(?)", strings.TrimSpace(email)).First(&user).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// CreateUser creates a new user with an initial quota.
+func (r *PostgresRepository) CreateUser(email, apiKey string, initialQuota int) (*models.User, error) {
+	user := models.User{
+		Email:    strings.ToLower(strings.TrimSpace(email)),
+		APIKey:   strings.TrimSpace(apiKey),
+		Quota:    initialQuota,
+		IsSystem: false,
+	}
+	if err := r.db.Create(&user).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// RotateUserAPIKey updates a user's API key atomically.
+func (r *PostgresRepository) RotateUserAPIKey(userID uint, newAPIKey string) error {
+	return r.db.Model(&models.User{}).Where("id = ?", userID).Update("api_key", strings.TrimSpace(newAPIKey)).Error
+}
+
 func (r *PostgresRepository) UpdateUserQuota(userID uint, newQuota int) error {
 	return r.db.Model(&models.User{}).Where("id = ?", userID).Update("quota", newQuota).Error
 }

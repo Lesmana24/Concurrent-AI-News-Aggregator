@@ -43,6 +43,12 @@ func (m *mockAuthNewsService) GetUser(apiKey string) (*models.User, error) {
 	}
 	return nil, errors.New("user not found")
 }
+func (m *mockAuthNewsService) RegisterUser(ctx context.Context, email string) (*models.User, error) {
+	return nil, nil
+}
+func (m *mockAuthNewsService) RotateAPIKey(ctx context.Context, currentAPIKey string) (string, string, *models.User, error) {
+	return "", "", nil, nil
+}
 func (m *mockAuthNewsService) WithCache(c cache.CacheService) service.NewsService {
 	return m
 }

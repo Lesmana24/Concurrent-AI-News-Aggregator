@@ -725,3 +725,117 @@ func (h *NewsHandler) GetMe(c *gin.Context) {
 		"api_key": apiKey,
 	})
 }
+
+// RegisterUser godoc
+// @Summary      Register a new user and generate API Key
+// @Description  Allows new developers or clients to register an email address and instantly receive a personal API Key with starting quota.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        payload body models.RegisterUserRequest true "User Registration Details"
+// @Success      201 {object} map[string]interface{} "User registered successfully"
+// @Failure      400 {object} map[string]string "Invalid request or malformed email"
+// @Failure      409 {object} map[string]string "Email already registered"
+// @Failure      500 {object} map[string]string "Internal server error"
+// @Router       /api/v1/auth/register [post]
+func (h *NewsHandler) RegisterUser(c *gin.Context) {
+	var req models.RegisterUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if isMaxBytesError(err) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request entity too large"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid registration request: %v", err)})
+		return
+	}
+
+	user, err := h.service.RegisterUser(c.Request.Context(), req.Email)
+	if err != nil {
+		if errors.Is(err, service.ErrEmailAlreadyRegistered) {
+			c.JSON(http.StatusConflict, gin.H{
+				"status":  "error",
+				"message": "Email is already registered",
+			})
+			return
+		}
+		if errors.Is(err, service.ErrInvalidEmail) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"status":  "error",
+				"message": "Invalid email address format",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": fmt.Sprintf("Registration failed: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"status":  "success",
+		"message": "User registered successfully. Save your API key securely.",
+		"data": models.RegisterUserResponse{
+			ID:        user.ID,
+			Email:     user.Email,
+			APIKey:    user.APIKey,
+			Quota:     user.Quota,
+			CreatedAt: user.CreatedAt,
+		},
+	})
+}
+
+// RotateAPIKey godoc
+// @Summary      Rotate user API Key
+// @Description  Revokes the caller's current API Key and immediately generates a new replacement API Key.
+// @Tags         User
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Success      200 {object} map[string]interface{} "API Key rotated successfully"
+// @Failure      401 {object} map[string]string "API Key missing or invalid"
+// @Failure      403 {object} map[string]string "System accounts cannot rotate keys"
+// @Failure      500 {object} map[string]string "Internal server error"
+// @Router       /api/v1/user/rotate-key [post]
+func (h *NewsHandler) RotateAPIKey(c *gin.Context) {
+	apiKey := c.GetHeader("X-API-KEY")
+	if apiKey == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "API Key is missing"})
+		return
+	}
+
+	oldKey, newKey, user, err := h.service.RotateAPIKey(c.Request.Context(), apiKey)
+	if err != nil {
+		if errors.Is(err, service.ErrCannotRotateSystemKey) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"status":  "error",
+				"message": "System account API keys cannot be rotated through this endpoint",
+			})
+			return
+		}
+		if errors.Is(err, service.ErrUserNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"status":  "error",
+				"message": "Invalid or expired API Key",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": fmt.Sprintf("Failed to rotate API Key: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "API key rotated successfully. The previous key is immediately revoked.",
+		"data": models.RotateAPIKeyResponse{
+			ID:        user.ID,
+			Email:     user.Email,
+			OldAPIKey: oldKey,
+			NewAPIKey: newKey,
+			Quota:     user.Quota,
+			RotatedAt: time.Now(),
+		},
+	})
+}

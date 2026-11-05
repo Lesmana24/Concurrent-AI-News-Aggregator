@@ -90,3 +90,17 @@ export interface UserMe {
   api_key: string
 }
 
+export interface RegisterUserResponse {
+  message: string
+  api_key: string
+  quota: number
+  email: string
+}
+
+export interface RotateAPIKeyResponse {
+  message: string
+  api_key: string
+  quota: number
+  email: string
+}
+

@@ -209,6 +209,7 @@ func main() {
 	api := r.Group("/api/v1")
 	{
 		api.GET("/health", handler.Health)
+		api.POST("/auth/register", handler.RegisterUser)
 		api.GET("/news/search", handler.SemanticSearch)
 		api.GET("/news/trending", handler.GetTrending)
 		api.GET("/news/clusters/:id", handler.GetClusterDetail)
@@ -220,6 +221,7 @@ func main() {
 		protected.Use(middleware.APIKeyAuth(svc))
 		{
 			protected.GET("/user/me", handler.GetMe)
+			protected.POST("/user/rotate-key", handler.RotateAPIKey)
 			protected.POST("/summarize", handler.Summarize)
 			protected.POST("/qa", handler.QA)
 			protected.POST("/news/qa", handler.QA)

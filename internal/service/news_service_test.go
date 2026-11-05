@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"news-aggregator/internal/ai"
 	"news-aggregator/internal/models"
+	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -26,6 +28,27 @@ func (m *MockRepository) GetUserByKey(apiKey string) (*models.User, error) {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.User), args.Error(1)
+}
+
+func (m *MockRepository) GetUserByEmail(email string) (*models.User, error) {
+	args := m.Called(email)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.User), args.Error(1)
+}
+
+func (m *MockRepository) CreateUser(email, apiKey string, initialQuota int) (*models.User, error) {
+	args := m.Called(email, apiKey, initialQuota)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.User), args.Error(1)
+}
+
+func (m *MockRepository) RotateUserAPIKey(userID uint, newAPIKey string) error {
+	args := m.Called(userID, newAPIKey)
+	return args.Error(0)
 }
 
 func (m *MockRepository) UpdateUserQuota(userID uint, newQuota int) error {
@@ -685,4 +708,106 @@ func TestGetOrProcessArticle_BypassesLegacyFallbackCache(t *testing.T) {
 
 	mockRepo.AssertExpectations(t)
 	mockAI.AssertExpectations(t)
+}
+
+
+func TestRegisterUser_Success(t *testing.T) {
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo)
+
+	mockRepo.On("GetUserByEmail", "newdev@example.com").Return(nil, nil)
+	createdUser := &models.User{
+		Email:  "newdev@example.com",
+		APIKey: "na_live_test123",
+		Quota:  100,
+	}
+	createdUser.ID = 10
+	mockRepo.On("CreateUser", "newdev@example.com", mock.MatchedBy(func(key string) bool {
+		return strings.HasPrefix(key, "na_live_")
+	}), 100).Return(createdUser, nil)
+
+	user, err := svc.RegisterUser(context.Background(), "newdev@example.com")
+	assert.NoError(t, err)
+	assert.NotNil(t, user)
+	assert.Equal(t, uint(10), user.ID)
+	assert.Equal(t, "newdev@example.com", user.Email)
+	assert.NotEmpty(t, user.APIKey)
+	assert.Equal(t, 100, user.Quota)
+}
+
+func TestRegisterUser_DuplicateEmail_ReturnsError(t *testing.T) {
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo)
+
+	existingUser := &models.User{Email: "existing@example.com"}
+	existingUser.ID = 5
+	mockRepo.On("GetUserByEmail", "existing@example.com").Return(existingUser, nil)
+
+	user, err := svc.RegisterUser(context.Background(), "existing@example.com")
+	assert.ErrorIs(t, err, ErrEmailAlreadyRegistered)
+	assert.Nil(t, user)
+}
+
+func TestRegisterUser_InvalidEmail_ReturnsError(t *testing.T) {
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo)
+
+	invalidEmails := []string{"", "notanemail", "@nodomain", "user@"}
+	for _, em := range invalidEmails {
+		user, err := svc.RegisterUser(context.Background(), em)
+		assert.ErrorIs(t, err, ErrInvalidEmail)
+		assert.Nil(t, user)
+	}
+}
+
+func TestRotateAPIKey_Success(t *testing.T) {
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo)
+
+	currentUser := &models.User{
+		Email:    "dev@example.com",
+		APIKey:   "na_live_old_key",
+		Quota:    80,
+		IsSystem: false,
+	}
+	currentUser.ID = 2
+
+	mockRepo.On("GetUserByKey", "na_live_old_key").Return(currentUser, nil)
+	mockRepo.On("RotateUserAPIKey", uint(2), mock.MatchedBy(func(k string) bool {
+		return strings.HasPrefix(k, "na_live_") && k != "na_live_old_key"
+	})).Return(nil)
+
+	oldKey, newKey, user, err := svc.RotateAPIKey(context.Background(), "na_live_old_key")
+	assert.NoError(t, err)
+	assert.Equal(t, "na_live_old_key", oldKey)
+	assert.NotEmpty(t, newKey)
+	assert.NotEqual(t, oldKey, newKey)
+	assert.Equal(t, newKey, user.APIKey)
+}
+
+func TestRotateAPIKey_SystemUser_Blocked(t *testing.T) {
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo)
+
+	systemUser := &models.User{
+		Email:    "crawler@internal",
+		APIKey:   "crawler_key",
+		IsSystem: true,
+	}
+	systemUser.ID = 1
+
+	mockRepo.On("GetUserByKey", "crawler_key").Return(systemUser, nil)
+
+	_, _, _, err := svc.RotateAPIKey(context.Background(), "crawler_key")
+	assert.ErrorIs(t, err, ErrCannotRotateSystemKey)
+}
+
+func TestRotateAPIKey_InvalidCurrentKey_ReturnsError(t *testing.T) {
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo)
+
+	mockRepo.On("GetUserByKey", "non_existent_key").Return(nil, errors.New("not found"))
+
+	_, _, _, err := svc.RotateAPIKey(context.Background(), "non_existent_key")
+	assert.ErrorIs(t, err, ErrUserNotFound)
 }
