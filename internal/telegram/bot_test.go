@@ -28,3 +28,12 @@ func TestURLRegex_Extraction(t *testing.T) {
 	assert.Equal(t, "https://nasional.kompas.com/read/123", urls[0])
 	assert.Equal(t, "http://detik.com/456", urls[1])
 }
+
+
+func BenchmarkStripHTML(b *testing.B) {
+	raw := "<b>Tebal</b> dan <i>Miring</i> serta <a href=\"https://example.com\">Link</a> artikel berita."
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = stripHTML(raw)
+	}
+}

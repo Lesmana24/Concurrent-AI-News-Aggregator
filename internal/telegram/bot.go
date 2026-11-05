@@ -22,7 +22,10 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-var urlRegex = regexp.MustCompile(`https?://[^\s]+`)
+var (
+	urlRegex     = regexp.MustCompile(`https?://[^\s]+`)
+	htmlTagRegex = regexp.MustCompile(`<[^>]*>`)
+)
 
 // BotService manages the Telegram bot interaction, message routing, and push notifications.
 type BotService struct {
@@ -644,8 +647,7 @@ func (b *BotService) PushNotification(ctx context.Context, title, body string) e
 }
 
 func stripHTML(s string) string {
-	re := regexp.MustCompile("<[^>]*>")
-	return re.ReplaceAllString(s, "")
+	return htmlTagRegex.ReplaceAllString(s, "")
 }
 
 func generateSecureToken(prefix string) string {

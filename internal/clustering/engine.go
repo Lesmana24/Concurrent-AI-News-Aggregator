@@ -650,10 +650,15 @@ func ResolveSecondaryThematicImage(text string) string {
 	}
 }
 
+var (
+	thinkBlockRegex  = regexp.MustCompile(`(?s)<think>.*?</think>`)
+	xmlTagStripRegex = regexp.MustCompile(`(?i)</?(?:intisari|judul|summary|title)>`)
+)
+
 func cleanClusterSynthesis(aiResp string) (string, string, bool) {
 	// Strip reasoning tags or think blocks
-	aiResp = regexp.MustCompile(`(?s)<think>.*?</think>`).ReplaceAllString(aiResp, "")
-	aiResp = regexp.MustCompile(`(?i)</?(?:intisari|judul|summary|title)>`).ReplaceAllString(aiResp, "")
+	aiResp = thinkBlockRegex.ReplaceAllString(aiResp, "")
+	aiResp = xmlTagStripRegex.ReplaceAllString(aiResp, "")
 	aiResp = strings.TrimSpace(aiResp)
 
 	if !strings.Contains(aiResp, "||") {

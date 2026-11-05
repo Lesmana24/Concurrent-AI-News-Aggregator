@@ -174,15 +174,21 @@ func (c *OpenAICompatibleClient) Summarize(ctx context.Context, text string) (st
 	return cleanSummary(raw), nil
 }
 
+var (
+	thinkTagRegex       = regexp.MustCompile(`(?s)<think>.*?</think>`)
+	xmlTagRegex         = regexp.MustCompile(`(?i)</?(?:intisari|judul|summary|title)>`)
+	sentencePrefixRegex = regexp.MustCompile(`(?i)(?:Sentence|Kalimat)\s*\d+:\s*`)
+)
+
 func cleanSummary(raw string) string {
-	raw = regexp.MustCompile(`(?s)<think>.*?</think>`).ReplaceAllString(raw, "")
-	raw = regexp.MustCompile(`(?i)</?(?:intisari|judul|summary|title)>`).ReplaceAllString(raw, "")
+	raw = thinkTagRegex.ReplaceAllString(raw, "")
+	raw = xmlTagRegex.ReplaceAllString(raw, "")
 	raw = strings.TrimSpace(raw)
 
 	// If the model vomited sentences prefixed with Sentence 1:, Sentence 2:, etc.
 	if strings.Contains(raw, "Sentence 1:") || strings.Contains(raw, "Kalimat 1:") {
 		var sentences []string
-		parts := regexp.MustCompile(`(?i)(?:Sentence|Kalimat)\s*\d+:\s*`).Split(raw, -1)
+		parts := sentencePrefixRegex.Split(raw, -1)
 		for _, p := range parts {
 			trimmed := strings.TrimSpace(p)
 			if trimmed != "" && !strings.HasPrefix(strings.ToLower(trimmed), "we need") && !strings.HasPrefix(strings.ToLower(trimmed), "now 3") {

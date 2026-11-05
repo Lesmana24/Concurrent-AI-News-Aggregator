@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 type mockClusterRepo struct {
@@ -266,5 +268,22 @@ func TestClusterEngine_PreventConcurrentRecompute(t *testing.T) {
 	_, err := engine.Recompute(context.Background())
 	if err == nil {
 		t.Fatalf("expected error when recomputing concurrently, got nil")
+	}
+}
+
+
+func TestCleanClusterSynthesis(t *testing.T) {
+	raw := `<think>evaluating cluster</think><summary>Kebijakan Baru Transportasi Publik</summary> || Pemerintah daerah meluncurkan armada bus listrik baru.`
+	title, summary, ok := cleanClusterSynthesis(raw)
+	assert.True(t, ok)
+	assert.Equal(t, "Kebijakan Baru Transportasi Publik", title)
+	assert.Equal(t, "Pemerintah daerah meluncurkan armada bus listrik baru.", summary)
+}
+
+func BenchmarkCleanClusterSynthesis(b *testing.B) {
+	raw := `<think>thinking...</think><summary>Judul Berita Utama</summary> || Ringkasan berita terkini.`
+	b.ReportAllocs()
+	for b.Loop() {
+		_, _, _ = cleanClusterSynthesis(raw)
 	}
 }
