@@ -63,6 +63,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Configure Database Connection Pool
+	poolCfg := repository.DBPoolConfigFromEnv()
+	if err := repository.ConfigureDBPool(db, poolCfg); err != nil {
+		slog.Error("Database connection pool configuration failed", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
 	// Auto-Migrate Core Schemas
 	if err := db.AutoMigrate(
 		&models.User{},
