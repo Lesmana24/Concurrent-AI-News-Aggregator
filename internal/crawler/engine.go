@@ -293,8 +293,25 @@ func (e *HarvesterEngine) fetchFeed(ctx context.Context, source FeedSource) ([]F
 		return nil, fmt.Errorf("feed server returned status %d", resp.StatusCode)
 	}
 
-	// Limit feed response body to 5 MB to prevent decompression bombs / memory exhaustion
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 5*1024*1024))
+	// 1. Early Content-Length check to save bandwidth
+	const maxFeedBytes = 5 * 1024 * 1024 // 5 MB
+	if resp.ContentLength > maxFeedBytes {
+		return nil, fmt.Errorf("feed content length (%d bytes) exceeds %d MB limit", resp.ContentLength, maxFeedBytes/(1024*1024))
+	}
+
+	// 2. Validate Content-Type for XML/RSS/Atom feeds
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	if contentType != "" &&
+		!strings.Contains(contentType, "xml") &&
+		!strings.Contains(contentType, "rss") &&
+		!strings.Contains(contentType, "atom") &&
+		!strings.Contains(contentType, "text") &&
+		!strings.Contains(contentType, "octet-stream") {
+		return nil, fmt.Errorf("unsupported feed content-type '%s' (only XML/RSS/Atom accepted)", contentType)
+	}
+
+	// 3. Limit feed response body to 5 MB to prevent decompression bombs / memory exhaustion
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxFeedBytes))
 	if err != nil {
 		return nil, err
 	}

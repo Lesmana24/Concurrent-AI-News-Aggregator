@@ -191,9 +191,10 @@ func main() {
 		WithClustering(clusterEngine).
 		WithRepository(repo)
 
-	// Gin Engine with Structured Logging, Request-ID, and CORS Middleware
+	// Gin Engine with Structured Logging, Request-ID, CORS, and Body Limit Middleware
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.MaxBodySize(2 * 1024 * 1024)) // 2 MB limit for API request payloads (anti-DoS)
 	r.Use(middleware.CORS())
 	r.Use(middleware.RequestIDAndLogger())
 

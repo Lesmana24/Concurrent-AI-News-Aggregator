@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"math/rand"
@@ -152,7 +153,7 @@ func (c *GeminiEmbeddingClient) tryEmbed(ctx context.Context, modelName, text st
 	defer resp.Body.Close()
 
 	var embedResp geminiEmbedResponse
-	if err := json.NewDecoder(resp.Body).Decode(&embedResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 5*1024*1024)).Decode(&embedResp); err != nil {
 		return nil, fmt.Errorf("failed to decode gemini embedding response: %w", err)
 	}
 

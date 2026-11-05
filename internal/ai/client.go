@@ -277,7 +277,7 @@ func (c *OpenAICompatibleClient) executeChat(ctx context.Context, sysPrompt, use
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		respBytes, _ := io.ReadAll(resp.Body)
+		respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		log.Printf("[%s] Rate limit (429) encountered: %s. Retrying with lighter model after 1.5s...", c.providerName, string(respBytes))
 
 		retryModel := activeModel
@@ -304,7 +304,7 @@ func (c *OpenAICompatibleClient) executeChat(ctx context.Context, sysPrompt, use
 		}
 	}
 
-	respBytes, err := io.ReadAll(resp.Body)
+	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
 	if err != nil {
 		return "", fmt.Errorf("failed to read %s response: %w", c.providerName, err)
 	}
@@ -377,7 +377,7 @@ func (c *OpenAICompatibleClient) executeChatStream(ctx context.Context, sysPromp
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		respBytes, _ := io.ReadAll(resp.Body)
+		respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		log.Printf("[%s] Stream rate limit (429) encountered: %s. Retrying with lighter model after 1.5s...", c.providerName, string(respBytes))
 
 		retryModel := activeModel
@@ -406,7 +406,7 @@ func (c *OpenAICompatibleClient) executeChatStream(ctx context.Context, sysPromp
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		respBytes, _ := io.ReadAll(resp.Body)
+		respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		return fmt.Errorf("%s stream API responded with status %d: %s", c.providerName, resp.StatusCode, string(respBytes))
 	}
 

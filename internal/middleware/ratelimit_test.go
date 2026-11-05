@@ -168,9 +168,10 @@ func TestRateLimit_RedisConcurrentRequests_Atomic(t *testing.T) {
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 
-			if w.Code == http.StatusOK {
+			switch w.Code {
+			case http.StatusOK:
 				atomic.AddInt32(&passCount, 1)
-			} else if w.Code == http.StatusTooManyRequests {
+			case http.StatusTooManyRequests:
 				atomic.AddInt32(&blockCount, 1)
 			}
 		}()

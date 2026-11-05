@@ -236,3 +236,72 @@ func TestHarvesterEngine_BlocksPrivateAndRedirectFeeds(t *testing.T) {
 	assert.Contains(t, result.Errors[0], "blocked")
 	assert.Contains(t, result.Errors[1], "blocked")
 }
+
+func TestHarvesterEngine_RejectsOversizedFeed(t *testing.T) {
+	t.Setenv("ALLOW_INTERNAL_URLS", "true")
+
+	// Server reports Content-Length of 10 MB
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		w.Header().Set("Content-Length", "10485760") // 10 MB
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("<rss></rss>"))
+	}))
+	defer ts.Close()
+
+	mockRepo := new(mockCrawlerRepo)
+	systemUser := &models.User{}
+	systemUser.ID = 1
+	mockRepo.On("EnsureSystemUser", mock.Anything, mock.Anything, mock.Anything).Return(systemUser, nil)
+	mockNews := new(mockNewsService)
+
+	cfg := Config{
+		Interval: time.Hour,
+		Sources: []FeedSource{
+			{ID: "oversized", Name: "Oversized Feed", URL: ts.URL, Enabled: true},
+		},
+	}
+
+	engine := NewHarvesterEngine(cfg, mockNews, mockRepo)
+	result, err := engine.CrawlAll(context.Background())
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 0, result.Fetched)
+	assert.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0], "exceeds 5 MB limit")
+}
+
+func TestHarvesterEngine_RejectsNonXMLContentType(t *testing.T) {
+	t.Setenv("ALLOW_INTERNAL_URLS", "true")
+
+	// Server reports Content-Type of video/mp4
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("\x00\x00\x00 ftypisom"))
+	}))
+	defer ts.Close()
+
+	mockRepo := new(mockCrawlerRepo)
+	systemUser := &models.User{}
+	systemUser.ID = 1
+	mockRepo.On("EnsureSystemUser", mock.Anything, mock.Anything, mock.Anything).Return(systemUser, nil)
+	mockNews := new(mockNewsService)
+
+	cfg := Config{
+		Interval: time.Hour,
+		Sources: []FeedSource{
+			{ID: "video", Name: "Video Feed", URL: ts.URL, Enabled: true},
+		},
+	}
+
+	engine := NewHarvesterEngine(cfg, mockNews, mockRepo)
+	result, err := engine.CrawlAll(context.Background())
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 0, result.Fetched)
+	assert.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0], "unsupported feed content-type")
+}

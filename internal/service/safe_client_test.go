@@ -1,6 +1,7 @@
 package service
 
 import (
+	"compress/gzip"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -204,4 +205,73 @@ func TestSafeHTTPClient_BlocksUnsupportedSchemeRedirect(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported scheme")
 	}
+}
+
+func TestScrapeArticle_RejectsContentLengthExceedingLimit(t *testing.T) {
+	t.Setenv("ALLOW_INTERNAL_URLS", "true")
+
+	// Server reports Content-Length of 10 MB
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Content-Length", "10485760") // 10 MB
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("<html><body>Hello</body></html>"))
+	}))
+	defer ts.Close()
+
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo).(*newsService)
+
+	_, err := svc.scrapeArticle(context.Background(), ts.URL)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds 5 MB limit")
+}
+
+func TestScrapeArticle_RejectsNonHTMLContentType(t *testing.T) {
+	t.Setenv("ALLOW_INTERNAL_URLS", "true")
+
+	// Server returns binary octet-stream
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("\x00\x01\x02\x03\x04\x05"))
+	}))
+	defer ts.Close()
+
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo).(*newsService)
+
+	_, err := svc.scrapeArticle(context.Background(), ts.URL)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported article content-type")
+}
+
+func TestScrapeArticle_BlocksGzipBomb(t *testing.T) {
+	t.Setenv("ALLOW_INTERNAL_URLS", "true")
+
+	// Server serves gzipped payload that expands beyond 5 MB
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Content-Encoding", "gzip")
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+
+		// Write repeated paragraph tags in compressed form
+		chunk := []byte("<p>Konten artikel berita aktual untuk pengujian gzip bomb.</p>\n")
+		gz.Write([]byte("<html><head><title>Gzip Bomb Test</title></head><body>"))
+		for i := 0; i < 90000; i++ {
+			gz.Write(chunk)
+		}
+		gz.Write([]byte("</body></html>"))
+	}))
+	defer ts.Close()
+
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo).(*newsService)
+
+	scraped, err := svc.scrapeArticle(context.Background(), ts.URL)
+	assert.NoError(t, err)
+	assert.Equal(t, "Gzip Bomb Test", scraped.Title)
+	// Extracted content must not exceed 5 MB
+	assert.LessOrEqual(t, len(scraped.Content), 5*1024*1024)
 }

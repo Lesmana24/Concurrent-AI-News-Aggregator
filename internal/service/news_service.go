@@ -511,8 +511,23 @@ func (s *newsService) scrapeArticle(ctx context.Context, url string) (*ScrapedAr
 		return nil, fmt.Errorf("http error: %d", resp.StatusCode)
 	}
 
-	// Limit HTML read to 5 MB to prevent memory exhaustion / decompression bombs
-	limitedReader := io.LimitReader(resp.Body, 5*1024*1024)
+	// 1. Early Content-Length check to save bandwidth
+	const maxArticleBytes = 5 * 1024 * 1024 // 5 MB
+	if resp.ContentLength > maxArticleBytes {
+		return nil, fmt.Errorf("response content length (%d bytes) exceeds %d MB limit", resp.ContentLength, maxArticleBytes/(1024*1024))
+	}
+
+	// 2. Validate Content-Type to reject non-HTML/binary payloads (e.g. video, zip, pdf, exe)
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	if contentType != "" &&
+		!strings.Contains(contentType, "text/html") &&
+		!strings.Contains(contentType, "application/xhtml") &&
+		!strings.Contains(contentType, "text/plain") {
+		return nil, fmt.Errorf("unsupported article content-type '%s' (only HTML/text accepted)", contentType)
+	}
+
+	// 3. Limit HTML read to 5 MB to prevent memory exhaustion / decompression bombs
+	limitedReader := io.LimitReader(resp.Body, maxArticleBytes)
 	doc, err := goquery.NewDocumentFromReader(limitedReader)
 	if err != nil {
 		return nil, err

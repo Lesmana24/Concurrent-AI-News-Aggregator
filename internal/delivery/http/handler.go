@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -98,6 +99,11 @@ func (h *NewsHandler) Health(c *gin.Context) {
 	})
 }
 
+func isMaxBytesError(err error) bool {
+	var maxBytesErr *http.MaxBytesError
+	return errors.As(err, &maxBytesErr)
+}
+
 // Summarize godoc
 // @Summary      Summarize news articles concurrently
 // @Description  Scrapes provided news URLs in parallel using goroutines, extracts content & real titles, queries configured AI provider with fallback, and caches results.
@@ -115,6 +121,10 @@ func (h *NewsHandler) Health(c *gin.Context) {
 func (h *NewsHandler) Summarize(c *gin.Context) {
 	var req models.SummarizeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		if isMaxBytesError(err) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request entity too large"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: urls must be a list of valid URLs or url must be a valid URL"})
 		return
 	}
@@ -165,6 +175,10 @@ func (h *NewsHandler) Summarize(c *gin.Context) {
 func (h *NewsHandler) QA(c *gin.Context) {
 	var req models.NewsQARequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		if isMaxBytesError(err) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request entity too large"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid request body: %v", err)})
 		return
 	}
@@ -357,6 +371,10 @@ func (h *NewsHandler) GlobalQA(c *gin.Context) {
 func (h *NewsHandler) Compare(c *gin.Context) {
 	var req models.NewsCompareRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		if isMaxBytesError(err) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request entity too large"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid request body: %v", err)})
 		return
 	}

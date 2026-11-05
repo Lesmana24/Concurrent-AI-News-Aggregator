@@ -103,13 +103,13 @@ func (r *ModelResolver) fetchActiveModel(ctx context.Context, modelsURL, apiKey,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		log.Printf("[%s] Warning: models endpoint returned status %d: %s", providerType, resp.StatusCode, string(b))
 		return ""
 	}
 
 	var res modelsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 5*1024*1024)).Decode(&res); err != nil {
 		return ""
 	}
 
