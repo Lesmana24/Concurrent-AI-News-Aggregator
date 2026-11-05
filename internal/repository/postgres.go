@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/pgvector/pgvector-go"
 	"gorm.io/gorm"
@@ -208,17 +209,26 @@ func containsWholeWord(text, word string) bool {
 	lowerWord := strings.ToLower(word)
 	idx := strings.Index(lowerText, lowerWord)
 	for idx != -1 {
-		startOk := (idx == 0) || !isAlphaNum(rune(lowerText[idx-1]))
+		rBefore := rune(0)
+		if idx > 0 {
+			rBefore, _ = utf8.DecodeLastRuneInString(lowerText[:idx])
+		}
+		startOk := (idx == 0) || !isAlphaNum(rBefore)
+
 		endIdx := idx + len(lowerWord)
-		endOk := (endIdx == len(lowerText)) || !isAlphaNum(rune(lowerText[endIdx]))
+		rAfter := rune(0)
+		if endIdx < len(lowerText) {
+			rAfter, _ = utf8.DecodeRuneInString(lowerText[endIdx:])
+		}
+		endOk := (endIdx == len(lowerText)) || !isAlphaNum(rAfter)
 		if startOk && endOk {
 			return true
 		}
-		next := strings.Index(lowerText[idx+1:], lowerWord)
+		next := strings.Index(lowerText[endIdx:], lowerWord)
 		if next == -1 {
 			break
 		}
-		idx += 1 + next
+		idx = endIdx + next
 	}
 	return false
 }

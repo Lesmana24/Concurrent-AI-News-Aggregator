@@ -1,9 +1,11 @@
 package service
 
 import (
+	"news-aggregator/internal/strutil"
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 var indonesianStopwords = map[string]bool{
@@ -29,14 +31,14 @@ type ScoredChunk struct {
 // and selects the most relevant chunks up to maxChars budget.
 func SmartSelectChunks(content string, question string, maxChars int) string {
 	content = strings.TrimSpace(content)
-	if len(content) <= maxChars {
+	if utf8.RuneCountInString(content) <= maxChars {
 		return content
 	}
 
 	chunks := splitIntoParagraphChunks(content, 600)
 	if len(chunks) <= 1 {
-		if len(content) > maxChars {
-			return content[:maxChars] + "..."
+		if utf8.RuneCountInString(content) > maxChars {
+			return strutil.TruncateRunes(content, maxChars) + "..."
 		}
 		return content
 	}
@@ -72,7 +74,7 @@ func SmartSelectChunks(content string, question string, maxChars int) string {
 	var selected []ScoredChunk
 	totalChars := 0
 	for _, sc := range scored {
-		chunkLen := len(sc.Text)
+		chunkLen := utf8.RuneCountInString(sc.Text)
 		if totalChars+chunkLen > maxChars && len(selected) > 0 {
 			continue
 		}
@@ -114,23 +116,28 @@ func splitIntoParagraphChunks(text string, targetChunkLen int) []string {
 	}
 
 	// If only 1 giant paragraph exists, split by sentence
-	if len(chunks) <= 1 && len(text) > targetChunkLen {
+	if len(chunks) <= 1 && utf8.RuneCountInString(text) > targetChunkLen {
 		sentences := strings.Split(text, ". ")
 		chunks = nil
 		var current strings.Builder
+		currentRunes := 0
 		for _, s := range sentences {
 			s = strings.TrimSpace(s)
 			if s == "" {
 				continue
 			}
-			if current.Len()+len(s) > targetChunkLen && current.Len() > 0 {
+			sRunes := utf8.RuneCountInString(s)
+			if currentRunes+sRunes > targetChunkLen && current.Len() > 0 {
 				chunks = append(chunks, current.String())
 				current.Reset()
+				currentRunes = 0
 			}
 			if current.Len() > 0 {
 				current.WriteString(". ")
+				currentRunes += 2
 			}
 			current.WriteString(s)
+			currentRunes += sRunes
 		}
 		if current.Len() > 0 {
 			chunks = append(chunks, current.String())
@@ -171,14 +178,15 @@ func selectLeadingChunks(chunks []string, maxChars int) string {
 	var result strings.Builder
 	total := 0
 	for i, c := range chunks {
-		if total+len(c) > maxChars && i > 0 {
+		cRunes := utf8.RuneCountInString(c)
+		if total+cRunes > maxChars && i > 0 {
 			break
 		}
 		if i > 0 {
 			result.WriteString("\n\n")
 		}
 		result.WriteString(c)
-		total += len(c)
+		total += cRunes
 	}
 	return result.String()
 }

@@ -13,11 +13,13 @@ import (
 	"news-aggregator/internal/repository"
 	"news-aggregator/internal/scheduler"
 	"news-aggregator/internal/service"
+	"news-aggregator/internal/strutil"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -530,8 +532,8 @@ func (b *BotService) handleTrending(ctx context.Context, chatID int64) {
 		}
 
 		shortSummary := item.Summary
-		if len([]rune(shortSummary)) > 120 {
-			shortSummary = string([]rune(shortSummary)[:117]) + "..."
+		if utf8.RuneCountInString(shortSummary) > 120 {
+			shortSummary = strutil.TruncateRunes(shortSummary, 117) + "..."
 		}
 
 		sb.WriteString(fmt.Sprintf("<b>%d. %s</b>\n", i+1, html.EscapeString(item.Title)))
@@ -613,7 +615,11 @@ func (b *BotService) sendMessage(chatID int64, text string) {
 	if _, err := b.bot.Send(msg); err != nil {
 		// Fallback to plain text if HTML tags fail to parse
 		msg.ParseMode = ""
-		msg.Text = stripHTML(text)
+		plain := stripHTML(text)
+		if utf8.RuneCountInString(plain) > 4000 {
+			plain = strutil.TruncateRunes(plain, 3950) + "\n\n...(pesan dipotong karena batas panjang Telegram)"
+		}
+		msg.Text = plain
 		_, _ = b.bot.Send(msg)
 	}
 }

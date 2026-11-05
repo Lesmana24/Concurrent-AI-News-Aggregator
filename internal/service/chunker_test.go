@@ -3,6 +3,7 @@ package service
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -39,4 +40,28 @@ func TestSmartSelectChunks_FallbackToLeadingWhenNoMatch(t *testing.T) {
 	res := SmartSelectChunks(content, "apa itu?", 40)
 	assert.Contains(t, res, "Paragraf pertama")
 }
+
+func TestSmartSelectChunks_MultiByteUTF8Safe(t *testing.T) {
+	// “ = 3 bytes (\xe2\x80\x9c)
+	// ” = 3 bytes (\xe2\x80\x9d)
+	// 📰 = 4 bytes (\xf0\x9f\x93\xb0)
+	// Single paragraph with multi-byte characters
+	text := "📰 “Kabar Terhangat Hari Ini” — Pemerintah meluncurkan program subsidi energi terbarukan."
+	// Total runes: 1 (📰) + 1 ( ) + 1 (“) + 23 + 1 (”) + 1 ( ) + 1 (—) + 1 ( ) + 59 = 89 runes.
+	// Byte count is 98 bytes due to multi-byte characters.
+
+	// If cut at 3 runes: 📰 (1), ' ' (2), “ (3)
+	// In naive byte slice [:3], byte 3 would cut inside the 4-byte emoji \xf0\x9f\x93\xb0!
+	res := SmartSelectChunks(text, "apa", 3)
+	assert.True(t, utf8.ValidString(res), "Result must be valid UTF-8 and not break runes")
+	assert.False(t, strings.ContainsRune(res, utf8.RuneError), "Must not produce RuneError (replacement character)")
+	assert.Equal(t, "📰 “...", res)
+
+	// Test cutting right after quote (28 runes)
+	res2 := SmartSelectChunks(text, "apa", 28)
+	assert.True(t, utf8.ValidString(res2))
+	assert.False(t, strings.ContainsRune(res2, utf8.RuneError))
+	assert.Equal(t, "📰 “Kabar Terhangat Hari Ini”...", res2)
+}
+
 

@@ -16,6 +16,7 @@ import (
 	"news-aggregator/internal/ai"
 	"news-aggregator/internal/cache"
 	"news-aggregator/internal/models"
+	"news-aggregator/internal/strutil"
 	"sort"
 	"strings"
 	"sync"
@@ -852,7 +853,7 @@ func extractOutletName(rawURL string) string {
 			outlet = parts[1]
 		}
 		if len(outlet) > 0 {
-			return strings.ToUpper(string(outlet[0])) + outlet[1:]
+			return strutil.CapitalizeFirst(outlet)
 		}
 	}
 	return hostname

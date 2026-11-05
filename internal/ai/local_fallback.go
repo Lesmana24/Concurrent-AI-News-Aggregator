@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"news-aggregator/internal/models"
+	"news-aggregator/internal/strutil"
 	"strings"
 	"time"
 )
@@ -87,15 +88,5 @@ func (p *LocalFallbackProvider) AnalyzeBias(ctx context.Context, articles []Arti
 }
 
 func extractSnippet(text string, maxLen int) string {
-	clean := strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
-	if len(clean) <= maxLen {
-		return clean
-	}
-
-	truncated := clean[:maxLen]
-	lastSpace := strings.LastIndex(truncated, " ")
-	if lastSpace > 50 {
-		truncated = truncated[:lastSpace]
-	}
-	return truncated + "..."
+	return strutil.TruncateWords(text, maxLen, 50, "...")
 }
