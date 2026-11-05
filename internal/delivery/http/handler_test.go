@@ -81,6 +81,10 @@ func (m *mockNewsService) WithEmbedding(emb ai.EmbeddingService) service.NewsSer
 	return m
 }
 
+func (m *mockNewsService) WithHTTPClient(client *http.Client) service.NewsService {
+	return m
+}
+
 func setupTestRouter(svc service.NewsService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

@@ -287,7 +287,11 @@ func (e *HarvesterEngine) fetchFeed(ctx context.Context, source FeedSource) ([]F
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// Drain up to 64 KB of unread body so Go's Transport can return the underlying TCP connection to the idle pool
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("feed server returned status %d", resp.StatusCode)

@@ -32,7 +32,7 @@ func NewModelResolver(ttl time.Duration) *ModelResolver {
 	return &ModelResolver{
 		cache:  make(map[string]cachedModel),
 		ttl:    ttl,
-		client: &http.Client{Timeout: 5 * time.Second},
+		client: &http.Client{Timeout: 5 * time.Second, Transport: SharedAITransport},
 	}
 }
 

@@ -61,6 +61,7 @@ type NewsService interface {
 	RotateAPIKey(ctx context.Context, currentAPIKey string) (oldKey string, newKey string, user *models.User, err error)
 	WithCache(c cache.CacheService) NewsService
 	WithEmbedding(emb ai.EmbeddingService) NewsService
+	WithHTTPClient(client *http.Client) NewsService
 }
 
 type newsService struct {
@@ -70,6 +71,7 @@ type newsService struct {
 	embeddingSvc ai.EmbeddingService
 	sfGroup      singleflight.Group
 	httpClient   *http.Client
+	mu           sync.RWMutex
 }
 
 type ScrapedArticle struct {
@@ -102,6 +104,15 @@ func (s *newsService) WithCache(c cache.CacheService) NewsService {
 
 func (s *newsService) WithEmbedding(emb ai.EmbeddingService) NewsService {
 	s.embeddingSvc = emb
+	return s
+}
+
+func (s *newsService) WithHTTPClient(client *http.Client) NewsService {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if client != nil {
+		s.httpClient = client
+	}
 	return s
 }
 
@@ -505,9 +516,17 @@ func (s *newsService) getOrFetchArticleContent(ctx context.Context, url string) 
 }
 
 func (s *newsService) scrapeArticle(ctx context.Context, url string) (*ScrapedArticle, error) {
+	s.mu.RLock()
 	client := s.httpClient
+	s.mu.RUnlock()
+
 	if client == nil {
-		client = NewSafeHTTPClient(15 * time.Second)
+		s.mu.Lock()
+		if s.httpClient == nil {
+			s.httpClient = NewSafeHTTPClient(15 * time.Second)
+		}
+		client = s.httpClient
+		s.mu.Unlock()
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -520,7 +539,11 @@ func (s *newsService) scrapeArticle(ctx context.Context, url string) (*ScrapedAr
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// Drain up to 64 KB of unread body so Go's Transport can return the underlying TCP connection to the idle pool
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("http error: %d", resp.StatusCode)

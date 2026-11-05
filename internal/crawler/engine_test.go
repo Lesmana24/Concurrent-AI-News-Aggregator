@@ -87,6 +87,10 @@ func (m *mockNewsService) WithEmbedding(e ai.EmbeddingService) service.NewsServi
 	return m
 }
 
+func (m *mockNewsService) WithHTTPClient(client *http.Client) service.NewsService {
+	return m
+}
+
 func TestHarvesterEngine_DeduplicationAndIndexing(t *testing.T) {
 	t.Setenv("ALLOW_INTERNAL_URLS", "true")
 	// Create mock RSS server

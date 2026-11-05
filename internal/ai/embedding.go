@@ -78,7 +78,8 @@ func NewGeminiEmbeddingClient(apiKey string) *GeminiEmbeddingClient {
 		model:      preferredModel,
 		candidates: candidates,
 		httpClient: &http.Client{
-			Timeout: 15 * time.Second,
+			Timeout:   15 * time.Second,
+			Transport: SharedAITransport,
 		},
 	}
 }

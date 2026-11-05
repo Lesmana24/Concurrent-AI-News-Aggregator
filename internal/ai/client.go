@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"news-aggregator/internal/models"
 	"regexp"
@@ -80,6 +81,22 @@ type OpenAICompatibleClient struct {
 	resolver     *ModelResolver
 }
 
+// SharedAITransport provides a connection-pooled HTTP transport for AI providers,
+// preventing socket exhaustion and enabling Keep-Alive reuse across concurrent LLM requests.
+var SharedAITransport = &http.Transport{
+	Proxy: http.ProxyFromEnvironment,
+	DialContext: (&net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext,
+	ForceAttemptHTTP2:     true,
+	MaxIdleConns:          100,
+	MaxIdleConnsPerHost:   10,
+	IdleConnTimeout:       90 * time.Second,
+	TLSHandshakeTimeout:   10 * time.Second,
+	ExpectContinueTimeout: 1 * time.Second,
+}
+
 // NewOpenAICompatibleClient creates a new OpenAICompatibleClient.
 func NewOpenAICompatibleClient(
 	providerName, providerType, chatURL, modelsURL, apiKey, model string,
@@ -96,7 +113,7 @@ func NewOpenAICompatibleClient(
 		modelsURL:    modelsURL,
 		apiKey:       strings.TrimSpace(apiKey),
 		model:        strings.TrimSpace(model),
-		httpClient:   &http.Client{Timeout: timeout},
+		httpClient:   &http.Client{Timeout: timeout, Transport: SharedAITransport},
 		resolver:     DefaultResolver(),
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
+	"sync"
 	"testing"
 	"time"
 
@@ -274,4 +276,128 @@ func TestScrapeArticle_BlocksGzipBomb(t *testing.T) {
 	assert.Equal(t, "Gzip Bomb Test", scraped.Title)
 	// Extracted content must not exceed 5 MB
 	assert.LessOrEqual(t, len(scraped.Content), 5*1024*1024)
+}
+
+
+func TestNewsService_HTTPClient_SharedInstanceNoReinstantiation(t *testing.T) {
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo).(*newsService)
+
+	initialClient := svc.httpClient
+	assert.NotNil(t, initialClient)
+
+	// Verify that scraping doesn't overwrite or replace svc.httpClient
+	t.Setenv("ALLOW_INTERNAL_URLS", "true")
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<html><head><title>Shared Client</title></head><body><p>Ini adalah konten artikel berita pengujian yang memiliki panjang lebih dari dua puluh karakter.</p></body></html>"))
+	}))
+	defer ts.Close()
+
+	_, err := svc.scrapeArticle(context.Background(), ts.URL)
+	assert.NoError(t, err)
+
+	assert.Same(t, initialClient, svc.httpClient, "HTTP client instance must remain identical and shared")
+}
+
+func TestNewsService_WithHTTPClient(t *testing.T) {
+	mockRepo := new(MockRepository)
+	customClient := &http.Client{Timeout: 42 * time.Second}
+
+	svc := NewNewsService(mockRepo)
+	svc.WithHTTPClient(customClient)
+
+	concrete := svc.(*newsService)
+	assert.Same(t, customClient, concrete.httpClient)
+}
+
+func TestNewsService_HTTPClient_LazyInitThreadSafe(t *testing.T) {
+	t.Setenv("ALLOW_INTERNAL_URLS", "true")
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<html><head><title>Lazy Init</title></head><body><p>Ini adalah konten artikel berita pengujian yang memiliki panjang lebih dari dua puluh karakter.</p></body></html>"))
+	}))
+	defer ts.Close()
+
+	mockRepo := new(MockRepository)
+	svc := &newsService{
+		repo: mockRepo,
+		// httpClient intentionally left nil to test lazy initialization
+	}
+
+	var wg sync.WaitGroup
+	clients := make([]*http.Client, 10)
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		idx := i
+		go func() {
+			defer wg.Done()
+			_, err := svc.scrapeArticle(context.Background(), ts.URL)
+			assert.NoError(t, err)
+			svc.mu.RLock()
+			clients[idx] = svc.httpClient
+			svc.mu.RUnlock()
+		}()
+	}
+
+	wg.Wait()
+
+	assert.NotNil(t, svc.httpClient)
+	for i := 0; i < 10; i++ {
+		assert.Same(t, svc.httpClient, clients[i], "All concurrent routines must share the single lazily-initialized client")
+	}
+}
+
+func TestScrapeArticle_ConnectionReuse_KeepAlive(t *testing.T) {
+	t.Setenv("ALLOW_INTERNAL_URLS", "true")
+
+	// Track new TCP connection creation
+	var connCount int
+	var mu sync.Mutex
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<html><head><title>Test Article</title></head><body><p>Ini adalah konten artikel berita pengujian yang memiliki panjang lebih dari dua puluh karakter.</p></body></html>"))
+	}))
+	defer ts.Close()
+
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo).(*newsService)
+
+	trace := &httptrace.ClientTrace{
+		GotConn: func(connInfo httptrace.GotConnInfo) {
+			mu.Lock()
+			if !connInfo.Reused {
+				connCount++
+			}
+			mu.Unlock()
+		},
+	}
+
+	// First request: dials new TCP connection
+	ctx1 := httptrace.WithClientTrace(context.Background(), trace)
+	scraped1, err := svc.scrapeArticle(ctx1, ts.URL+"/article1")
+	assert.NoError(t, err)
+	assert.Equal(t, "Test Article", scraped1.Title)
+
+	// Second request to same host: should reuse the idle connection from pool
+	ctx2 := httptrace.WithClientTrace(context.Background(), trace)
+	scraped2, err := svc.scrapeArticle(ctx2, ts.URL+"/article2")
+	assert.NoError(t, err)
+	assert.Equal(t, "Test Article", scraped2.Title)
+
+	// Third request
+	ctx3 := httptrace.WithClientTrace(context.Background(), trace)
+	scraped3, err := svc.scrapeArticle(ctx3, ts.URL+"/article3")
+	assert.NoError(t, err)
+	assert.Equal(t, "Test Article", scraped3.Title)
+
+	mu.Lock()
+	defer mu.Unlock()
+	// Exactly 1 initial TCP connection dialed, the next 2 requests reused the persistent connection
+	assert.Equal(t, 1, connCount, "TCP connection should be reused across sequential requests via connection pool")
 }

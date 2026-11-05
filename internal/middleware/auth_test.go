@@ -55,6 +55,9 @@ func (m *mockAuthNewsService) WithCache(c cache.CacheService) service.NewsServic
 func (m *mockAuthNewsService) WithEmbedding(emb ai.EmbeddingService) service.NewsService {
 	return m
 }
+func (m *mockAuthNewsService) WithHTTPClient(client *http.Client) service.NewsService {
+	return m
+}
 
 func setupAuthRouter(svc service.NewsService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
