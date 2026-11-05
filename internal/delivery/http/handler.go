@@ -705,16 +705,31 @@ func (h *NewsHandler) GetRecentArticles(c *gin.Context) {
 // @Failure      401 {object} map[string]string "API Key is missing or invalid"
 // @Router       /api/v1/user/me [get]
 func (h *NewsHandler) GetMe(c *gin.Context) {
-	apiKey := c.GetHeader("X-API-KEY")
-	if apiKey == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "API Key is missing"})
-		return
+	// First check if user object was already resolved and cached in context by the auth middleware
+	var user *models.User
+	if u, exists := c.Get("user"); exists {
+		if val, ok := u.(*models.User); ok && val != nil {
+			user = val
+		}
 	}
 
-	user, err := h.service.GetUser(apiKey)
-	if err != nil || user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid API Key"})
-		return
+	apiKey := c.GetHeader("X-API-KEY")
+
+	// If not found in context (e.g. middleware bypassed or direct handler invocation), fallback to service lookup
+	if user == nil {
+		if apiKey == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "API Key is missing"})
+			return
+		}
+
+		var err error
+		user, err = h.service.GetUser(apiKey)
+		if err != nil || user == nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid API Key"})
+			return
+		}
+	} else if apiKey == "" {
+		apiKey = user.APIKey
 	}
 
 	c.JSON(http.StatusOK, gin.H{

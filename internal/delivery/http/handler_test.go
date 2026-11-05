@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"news-aggregator/internal/ai"
 	"news-aggregator/internal/cache"
+	"news-aggregator/internal/middleware"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/service"
 	"testing"
@@ -23,6 +24,7 @@ type mockNewsService struct {
 	streamFunc    func(ctx context.Context, apiKey string, req models.NewsQARequest, outChan chan<- string) (string, []string, error)
 	registerFunc  func(ctx context.Context, email string) (*models.User, error)
 	rotateFunc    func(ctx context.Context, currentAPIKey string) (string, string, *models.User, error)
+	getUserFunc   func(apiKey string) (*models.User, error)
 }
 
 func (m *mockNewsService) SummarizeArticles(ctx context.Context, apiKey string, urls []string) ([]models.ArticleResponse, error) {
@@ -70,6 +72,9 @@ func (m *mockNewsService) CompareArticles(ctx context.Context, apiKey string, re
 }
 
 func (m *mockNewsService) GetUser(apiKey string) (*models.User, error) {
+	if m.getUserFunc != nil {
+		return m.getUserFunc(apiKey)
+	}
 	return nil, nil
 }
 
@@ -460,3 +465,148 @@ func TestRotateAPIKey_MissingAuth_Returns401(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
+
+func TestGetMe_FromContext_NoServiceCall(t *testing.T) {
+	getUserCallCount := 0
+	mockSvc := &mockNewsService{
+		getUserFunc: func(apiKey string) (*models.User, error) {
+			getUserCallCount++
+			return nil, errors.New("should not be called when user is in context")
+		},
+	}
+
+	handler := NewNewsHandler(mockSvc)
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/user/me", nil)
+	req.Header.Set("X-API-KEY", "na_live_testkey123")
+	c.Request = req
+
+	// Pre-populate user in context (simulating middleware.APIKeyAuth)
+	ctxUser := &models.User{
+		Email:  "developer@company.com",
+		Quota:  85,
+		APIKey: "na_live_testkey123",
+	}
+	ctxUser.ID = 42
+	c.Set("user", ctxUser)
+
+	handler.GetMe(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 0, getUserCallCount, "service.GetUser should not be called when user exists in context")
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, float64(42), resp["id"])
+	assert.Equal(t, "developer@company.com", resp["email"])
+	assert.Equal(t, float64(85), resp["quota"])
+	assert.Equal(t, "active", resp["status"])
+	assert.Equal(t, "na_live_testkey123", resp["api_key"])
+}
+
+func TestGetMe_FallbackWhenContextMissing(t *testing.T) {
+	getUserCallCount := 0
+	mockSvc := &mockNewsService{
+		getUserFunc: func(apiKey string) (*models.User, error) {
+			getUserCallCount++
+			assert.Equal(t, "na_live_fallback_key", apiKey)
+			u := &models.User{
+				Email:  "fallback@domain.org",
+				Quota:  10,
+				APIKey: "na_live_fallback_key",
+			}
+			u.ID = 99
+			return u, nil
+		},
+	}
+
+	handler := NewNewsHandler(mockSvc)
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/user/me", nil)
+	req.Header.Set("X-API-KEY", "na_live_fallback_key")
+	c.Request = req
+
+	// Note: context "user" is deliberately NOT set
+	handler.GetMe(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 1, getUserCallCount, "service.GetUser should be called as fallback when context is missing")
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, float64(99), resp["id"])
+	assert.Equal(t, "fallback@domain.org", resp["email"])
+}
+
+func TestGetMe_MissingKeyAndContext_401(t *testing.T) {
+	mockSvc := &mockNewsService{}
+	handler := NewNewsHandler(mockSvc)
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/user/me", nil)
+	c.Request = req
+
+	handler.GetMe(c)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Body.String(), "API Key is missing")
+}
+
+func TestGetMe_WithAPIKeyAuthMiddleware_CallsGetUserOnlyOnce(t *testing.T) {
+	getUserCallCount := 0
+	mockSvc := &mockNewsService{
+		getUserFunc: func(apiKey string) (*models.User, error) {
+			getUserCallCount++
+			u := &models.User{
+				Email:  "authed@user.com",
+				Quota:  100,
+				APIKey: apiKey,
+			}
+			u.ID = 7
+			return u, nil
+		},
+	}
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	handler := NewNewsHandler(mockSvc)
+
+	// Attach middleware and route as configured in cmd/api/main.go
+	protected := r.Group("/api/v1")
+	protected.Use(middleware.APIKeyAuth(mockSvc))
+	{
+		protected.GET("/user/me", handler.GetMe)
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/user/me", nil)
+	req.Header.Set("X-API-KEY", "na_live_valid_key")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 1, getUserCallCount, "service.GetUser must be called exactly ONCE by middleware, eliminating the duplicate DB query")
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, float64(7), resp["id"])
+	assert.Equal(t, "authed@user.com", resp["email"])
+	assert.Equal(t, "na_live_valid_key", resp["api_key"])
+}
+
+
