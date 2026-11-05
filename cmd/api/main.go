@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	_ "news-aggregator/docs"
@@ -98,6 +101,10 @@ func main() {
 	// Initialize Service with L1 Cache and Embedding
 	svc := service.NewNewsService(repo, aiService).WithCache(redisCache).WithEmbedding(embeddingSvc)
 
+	// Root context with graceful termination signal listener (SIGINT / SIGTERM)
+	appCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+
 	// Initialize Autonomous News Harvester Engine
 	crawlerEnabled := strings.EqualFold(os.Getenv("CRAWLER_ENABLED"), "true")
 	crawlerInterval, _ := strconv.Atoi(os.Getenv("CRAWLER_INTERVAL_MINUTES"))
@@ -118,7 +125,7 @@ func main() {
 	}, svc, repo)
 
 	if crawlerEnabled {
-		go harvester.Start(context.Background())
+		go harvester.Start(appCtx)
 	}
 
 	// Initialize Telegram Bot Service (Two-Way Interactive Chat & Push Notifications)
@@ -166,7 +173,7 @@ func main() {
 
 	briefingEngine := scheduler.NewBriefingEngine(briefingCfg, repo, aiService, telegramBot)
 	if briefingEnabled {
-		go briefingEngine.Start(context.Background())
+		go briefingEngine.Start(appCtx)
 	}
 
 	// Initialize Topic Clustering & Trending Topics Radar Engine
@@ -182,12 +189,12 @@ func main() {
 	}
 
 	clusterEngine := clustering.NewClusterEngine(clusterCfg, repo, aiService, embeddingSvc)
-	go clusterEngine.Start(context.Background())
+	go clusterEngine.Start(appCtx)
 
 	if telegramBot != nil && telegramBot.IsEnabled() {
 		telegramBot.WithScheduler(briefingEngine)
 		telegramBot.WithClustering(clusterEngine)
-		go telegramBot.Start(context.Background())
+		go telegramBot.Start(appCtx)
 	}
 
 	// Initialize Handler with DB, Redis, Crawler, Scheduler, Clustering, and Repo references
@@ -278,8 +285,52 @@ func main() {
 		port = "8080"
 	}
 
-	slog.Info("Server starting...", slog.String("port", port), slog.String("swagger_docs", "http://localhost:"+port+"/swagger/index.html"))
-	if err := r.Run(":" + port); err != nil {
-		slog.Error("Server failed to run", slog.String("error", err.Error()))
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
+
+	// Start HTTP server in a non-blocking background goroutine
+	go func() {
+		slog.Info("Server starting...",
+			slog.String("port", port),
+			slog.String("swagger_docs", "http://localhost:"+port+"/swagger/index.html"),
+		)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("HTTP server failed to listen", slog.String("error", err.Error()))
+			os.Exit(1)
+		}
+	}()
+
+	// Block until an OS termination signal is captured (SIGINT / SIGTERM)
+	<-appCtx.Done()
+	stopSignals() // Restore standard OS signal handling so subsequent Ctrl+C forces exit
+	slog.Info("Termination signal received, initiating graceful shutdown...")
+
+	// Configurable timeout context for draining in-flight requests (Default: 15 seconds)
+	shutdownTimeout := 15 * time.Second
+	if val := os.Getenv("SHUTDOWN_TIMEOUT_SECONDS"); val != "" {
+		if sec, err := strconv.Atoi(val); err == nil && sec > 0 {
+			shutdownTimeout = time.Duration(sec) * time.Second
+		}
+	}
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancelShutdown()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("HTTP server shutdown forced due to timeout", slog.String("error", err.Error()))
+	} else {
+		slog.Info("HTTP server gracefully stopped, all in-flight requests drained")
+	}
+
+	// Close database connection pool cleanly
+	if sqlDB, err := db.DB(); err == nil {
+		_ = sqlDB.Close()
+		slog.Info("Database connection pool cleanly closed")
+	}
+
+	slog.Info("Server shutdown complete, process exiting safely")
 }
