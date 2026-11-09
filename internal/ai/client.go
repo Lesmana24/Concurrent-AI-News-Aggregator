@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"news-aggregator/internal/models"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -124,6 +125,13 @@ func (c *OpenAICompatibleClient) Name() string {
 
 func (c *OpenAICompatibleClient) IsConfigured() bool {
 	return c.apiKey != "" && c.chatURL != ""
+}
+
+func (c *OpenAICompatibleClient) getLighterModel(activeModel string) string {
+	if c.resolver != nil {
+		return c.resolver.GetLighterModel(c.providerType, activeModel)
+	}
+	return DefaultResolver().GetLighterModel(c.providerType, activeModel)
 }
 
 type chatRequest struct {
@@ -301,17 +309,24 @@ func (c *OpenAICompatibleClient) executeChat(ctx context.Context, sysPrompt, use
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-		log.Printf("[%s] Rate limit (429) encountered: %s. Retrying with lighter model after 1.5s...", c.providerName, string(respBytes))
+		retryModel := c.getLighterModel(activeModel)
+		log.Printf("[%s] Rate limit (429) encountered for model %s: %s. Retrying with model %s...",
+			c.providerName, activeModel, string(respBytes), retryModel)
 
-		retryModel := activeModel
-		if strings.Contains(activeModel, "120b") {
-			retryModel = "openai/gpt-oss-20b"
+		backoff := 1500 * time.Millisecond
+		if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+			if secs, err := strconv.Atoi(retryAfter); err == nil && secs > 0 {
+				if secs > 10 {
+					secs = 10
+				}
+				backoff = time.Duration(secs) * time.Second
+			}
 		}
 
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
-		case <-time.After(1500 * time.Millisecond):
+		case <-time.After(backoff):
 		}
 
 		reqPayload.Model = retryModel
@@ -401,17 +416,24 @@ func (c *OpenAICompatibleClient) executeChatStream(ctx context.Context, sysPromp
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-		log.Printf("[%s] Stream rate limit (429) encountered: %s. Retrying with lighter model after 1.5s...", c.providerName, string(respBytes))
+		retryModel := c.getLighterModel(activeModel)
+		log.Printf("[%s] Stream rate limit (429) encountered for model %s: %s. Retrying with model %s...",
+			c.providerName, activeModel, string(respBytes), retryModel)
 
-		retryModel := activeModel
-		if strings.Contains(activeModel, "120b") {
-			retryModel = "openai/gpt-oss-20b"
+		backoff := 1500 * time.Millisecond
+		if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+			if secs, err := strconv.Atoi(retryAfter); err == nil && secs > 0 {
+				if secs > 10 {
+					secs = 10
+				}
+				backoff = time.Duration(secs) * time.Second
+			}
 		}
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(1500 * time.Millisecond):
+		case <-time.After(backoff):
 		}
 
 		reqPayload.Model = retryModel

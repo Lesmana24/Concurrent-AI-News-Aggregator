@@ -84,3 +84,30 @@ func TestModelResolver_StaticFallbackWhenServerFails(t *testing.T) {
 	assert.Equal(t, "openai/gpt-oss-120b", resolved)
 }
 
+func TestModelResolver_GetLighterModel(t *testing.T) {
+	resolver := NewModelResolver(time.Minute)
+
+	// Groq downgrades
+	assert.Equal(t, "openai/gpt-oss-20b", resolver.GetLighterModel("groq", "openai/gpt-oss-120b"))
+	assert.Equal(t, "llama-3.1-8b-instant", resolver.GetLighterModel("groq", "llama-3.3-70b-versatile"))
+	assert.Equal(t, "llama-3.1-8b-instant", resolver.GetLighterModel("groq", "qwen/qwen-2.5-72b-instruct"))
+	assert.Equal(t, "llama-3.1-8b-instant", resolver.GetLighterModel("groq", "llama-3.1-8b-instant"))
+
+	// NVIDIA NIM downgrades
+	assert.Equal(t, "meta/llama-3.1-8b-instruct", resolver.GetLighterModel("nvidia", "meta/llama-3.3-70b-instruct"))
+	assert.Equal(t, "meta/llama-3.1-8b-instruct", resolver.GetLighterModel("nvidia", "mistralai/mistral-large-2-instruct"))
+	assert.Equal(t, "meta/llama-3.1-8b-instruct", resolver.GetLighterModel("nvidia", "deepseek-ai/deepseek-r1"))
+	assert.Equal(t, "meta/llama-3.1-8b-instruct", resolver.GetLighterModel("nvidia", "meta/llama-3.1-8b-instruct"))
+
+	// Gemini downgrades
+	assert.Equal(t, "gemini-2.5-flash-lite", resolver.GetLighterModel("gemini", "gemini-1.5-pro"))
+	assert.Equal(t, "gemini-2.5-flash-lite", resolver.GetLighterModel("gemini", "gemini-2.0-flash"))
+	assert.Equal(t, "gemini-flash-latest", resolver.GetLighterModel("gemini", "gemini-2.5-flash-lite"))
+
+	// Default fallback
+	assert.Equal(t, "openai/gpt-oss-20b", resolver.GetLighterModel("unknown", "model-120b"))
+	assert.Equal(t, "model-8b", resolver.GetLighterModel("unknown", "model-70b"))
+	assert.Equal(t, "custom-model", resolver.GetLighterModel("unknown", "custom-model"))
+}
+
+

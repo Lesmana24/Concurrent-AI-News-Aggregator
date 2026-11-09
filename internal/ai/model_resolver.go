@@ -235,3 +235,49 @@ func (r *ModelResolver) getStaticFallbackModel(providerType string) string {
 		return "default"
 	}
 }
+
+// GetLighterModel returns a lighter, high-throughput fallback model for the given provider
+// when a 429 rate limit or quota saturation is encountered on the active model.
+func (r *ModelResolver) GetLighterModel(providerType, currentModel string) string {
+	lowerModel := strings.ToLower(currentModel)
+	switch strings.ToLower(providerType) {
+	case "groq":
+		// If using heavy 70b, 120b, mixtral, or qwen models, step down to lightweight 8b / 20b
+		if strings.Contains(lowerModel, "120b") {
+			return "openai/gpt-oss-20b"
+		}
+		if strings.Contains(lowerModel, "70b") || strings.Contains(lowerModel, "mixtral") || strings.Contains(lowerModel, "qwen") {
+			return "llama-3.1-8b-instant"
+		}
+		if strings.Contains(lowerModel, "8b") {
+			return currentModel
+		}
+		return "llama-3.1-8b-instant"
+
+	case "nvidia":
+		// If using large 70b, large-2, or deepseek models, step down to 8b or 7b instruct
+		if strings.Contains(lowerModel, "70b") || strings.Contains(lowerModel, "large") || strings.Contains(lowerModel, "deepseek") {
+			return "meta/llama-3.1-8b-instruct"
+		}
+		if strings.Contains(lowerModel, "8b") || strings.Contains(lowerModel, "7b") {
+			return currentModel
+		}
+		return "meta/llama-3.1-8b-instruct"
+
+	case "gemini":
+		// If using pro or standard flash, step down to flash-lite or flash-latest
+		if strings.Contains(lowerModel, "pro") || (strings.Contains(lowerModel, "flash") && !strings.Contains(lowerModel, "lite") && !strings.Contains(lowerModel, "8b")) {
+			return "gemini-2.5-flash-lite"
+		}
+		return "gemini-flash-latest"
+
+	default:
+		if strings.Contains(lowerModel, "120b") {
+			return "openai/gpt-oss-20b"
+		}
+		if strings.Contains(lowerModel, "70b") {
+			return strings.Replace(lowerModel, "70b", "8b", 1)
+		}
+		return currentModel
+	}
+}
