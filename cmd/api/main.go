@@ -187,6 +187,9 @@ func main() {
 	if interval, _ := strconv.Atoi(os.Getenv("CLUSTER_INTERVAL_MINUTES")); interval > 0 {
 		clusterCfg.RecomputeIntervalMinutes = interval
 	}
+	if workers, _ := strconv.Atoi(os.Getenv("CLUSTER_SYNTHESIS_WORKERS")); workers > 0 {
+		clusterCfg.SynthesisWorkers = workers
+	}
 
 	clusterEngine := clustering.NewClusterEngine(clusterCfg, repo, aiService, embeddingSvc)
 	go clusterEngine.Start(appCtx)

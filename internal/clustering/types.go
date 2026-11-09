@@ -12,6 +12,7 @@ type Config struct {
 	HoursWindow              int     `json:"hours_window"`               // Recent time window to cluster (default: 48)
 	MinArticlesForTrending   int     `json:"min_articles_for_trending"`  // Minimum articles to qualify as a cluster (default: 1)
 	RecomputeIntervalMinutes int     `json:"recompute_interval_minutes"` // Periodic recalculation (default: 30)
+	SynthesisWorkers         int     `json:"synthesis_workers"`          // Parallel worker pool concurrency limit for AI synthesis (default: 4)
 }
 
 // DefaultConfig provides recommended production defaults.
@@ -21,6 +22,7 @@ func DefaultConfig() Config {
 		HoursWindow:              48,
 		MinArticlesForTrending:   1,
 		RecomputeIntervalMinutes: 30,
+		SynthesisWorkers:         4,
 	}
 }
 

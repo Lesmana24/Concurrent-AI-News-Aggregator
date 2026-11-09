@@ -2,9 +2,11 @@ package clustering
 
 import (
 	"context"
+	"fmt"
 	"news-aggregator/internal/ai"
 	"news-aggregator/internal/models"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -270,6 +272,123 @@ func TestClusterEngine_PreventConcurrentRecompute(t *testing.T) {
 		t.Fatalf("expected error when recomputing concurrently, got nil")
 	}
 }
+
+type concurrentTrackingAIService struct {
+	currentActive int32
+	maxConcurrent int32
+	delay         time.Duration
+}
+
+func (m *concurrentTrackingAIService) Summarize(ctx context.Context, content string) (string, string, error) {
+	return "Summary", "mock", nil
+}
+
+func (m *concurrentTrackingAIService) AnswerQuestion(ctx context.Context, contextText, question string) (string, string, error) {
+	active := atomic.AddInt32(&m.currentActive, 1)
+	defer atomic.AddInt32(&m.currentActive, -1)
+
+	for {
+		max := atomic.LoadInt32(&m.maxConcurrent)
+		if active <= max || atomic.CompareAndSwapInt32(&m.maxConcurrent, max, active) {
+			break
+		}
+	}
+
+	select {
+	case <-ctx.Done():
+		return "", "", ctx.Err()
+	case <-time.After(m.delay):
+	}
+
+	return "Judul Sintesis Paralel || Ringkasan konsensus berita hasil paralel.", "mock", nil
+}
+
+func (m *concurrentTrackingAIService) AnswerQuestionStream(ctx context.Context, contextText, question string, ch chan<- string) (string, error) {
+	return "stream", nil
+}
+
+func (m *concurrentTrackingAIService) AnalyzeBias(ctx context.Context, articles []ai.ArticleForAnalysis) (*models.NewsCompareResponse, string, error) {
+	return nil, "mock", nil
+}
+
+func TestClusterEngine_ParallelSynthesis_WorkerPoolLimits(t *testing.T) {
+	repo := newMockClusterRepo()
+
+	// Build 3 clusters of 2 articles each (6 articles total)
+	var articles []models.Article
+	for c := 0; c < 3; c++ {
+		for a := 0; a < 2; a++ {
+			id := uint(c*2 + a + 1)
+			art := models.Article{
+				Title:       fmt.Sprintf("Cluster %d Article %d", c+1, a+1),
+				Summary:     fmt.Sprintf("Summary of %d-%d", c+1, a+1),
+				Source:      fmt.Sprintf("Outlet %d", a+1),
+				URL:         fmt.Sprintf("https://outlet%d.com/art%d", a+1, id),
+				PublishedAt: time.Now(),
+			}
+			art.ID = id
+			articles = append(articles, art)
+
+			vec := make([]float32, 768)
+			vec[c] = 0.99
+			repo.embeddings[id] = vec
+		}
+	}
+	repo.articles = articles
+
+	mockAI := &concurrentTrackingAIService{
+		delay: 60 * time.Millisecond,
+	}
+
+	cfg := DefaultConfig()
+	cfg.SynthesisWorkers = 3
+	engine := NewClusterEngine(cfg, repo, mockAI, nil)
+
+	start := time.Now()
+	clusters, err := engine.Recompute(context.Background())
+	duration := time.Since(start)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(clusters))
+
+	// All 3 clusters should be synthesized in parallel within ~60-150ms instead of sequentially (~180ms+)
+	assert.Less(t, duration, 170*time.Millisecond, "Parallel synthesis should be significantly faster than sequential")
+
+	// Max concurrency must not exceed configured worker limit
+	assert.LessOrEqual(t, mockAI.maxConcurrent, int32(3), "Concurrency must never exceed SynthesisWorkers limit")
+	assert.GreaterOrEqual(t, mockAI.maxConcurrent, int32(2), "At least 2 workers should have executed concurrently")
+
+	for _, cl := range clusters {
+		assert.Equal(t, "Judul Sintesis Paralel", cl.Title)
+		assert.Equal(t, "Ringkasan konsensus berita hasil paralel.", cl.Summary)
+	}
+}
+
+func TestClusterEngine_ContextCancellation_AbortsImmediately(t *testing.T) {
+	repo := newMockClusterRepo()
+	for i := uint(1); i <= 4; i++ {
+		art := models.Article{Title: "Article", URL: fmt.Sprintf("https://ex.com/%d", i)}
+		art.ID = i
+		repo.articles = append(repo.articles, art)
+		vec := make([]float32, 768)
+		vec[0] = 0.99
+		repo.embeddings[i] = vec
+	}
+
+	mockAI := &concurrentTrackingAIService{
+		delay: 1 * time.Second,
+	}
+
+	engine := NewClusterEngine(DefaultConfig(), repo, mockAI, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	_, err := engine.Recompute(ctx)
+	assert.Error(t, err)
+	assert.Equal(t, context.Canceled, err)
+}
+
 
 
 func TestCleanClusterSynthesis(t *testing.T) {

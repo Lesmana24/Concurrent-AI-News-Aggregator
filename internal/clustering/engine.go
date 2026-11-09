@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // ClusterEngine orchestrates topic detection and hotness ranking across multi-outlet news.
@@ -38,6 +40,9 @@ func NewClusterEngine(cfg Config, repo ClusterRepository, aiSvc ai.AIService, em
 	}
 	if cfg.RecomputeIntervalMinutes <= 0 {
 		cfg.RecomputeIntervalMinutes = 30
+	}
+	if cfg.SynthesisWorkers <= 0 {
+		cfg.SynthesisWorkers = 4
 	}
 
 	return &ClusterEngine{
@@ -264,118 +269,41 @@ func (e *ClusterEngine) Recompute(ctx context.Context) ([]models.TopicCluster, e
 		}
 	}
 
-	// 3. Score and Synthesize Topic Clusters
-	var resultClusters []models.TopicCluster
-
+	// 3. Score and Synthesize Topic Clusters in Parallel
+	var validClusters []rawCluster
 	for _, c := range clusters {
-		if len(c.articles) < e.cfg.MinArticlesForTrending {
-			continue
+		if len(c.articles) >= e.cfg.MinArticlesForTrending {
+			validClusters = append(validClusters, c)
+		}
+	}
+
+	resultClusters := make([]models.TopicCluster, len(validClusters))
+	if len(validClusters) > 0 {
+		workers := e.cfg.SynthesisWorkers
+		if workers <= 0 {
+			workers = 4
 		}
 
-		// Calculate outlets and recency
-		outletSet := make(map[string]bool)
-		var outletList []string
-		var latestTime time.Time
+		g, gCtx := errgroup.WithContext(ctx)
+		g.SetLimit(workers)
 
-		for _, a := range c.articles {
-			src := strings.TrimSpace(a.Source)
-			if src == "" {
-				src = extractOutletFromURL(a.URL)
-			}
-			if src != "" && !outletSet[strings.ToLower(src)] {
-				outletSet[strings.ToLower(src)] = true
-				outletList = append(outletList, src)
-			}
-			if a.PublishedAt.After(latestTime) {
-				latestTime = a.PublishedAt
-			}
-			if a.CreatedAt.After(latestTime) {
-				latestTime = a.CreatedAt
-			}
-		}
-
-		if latestTime.IsZero() {
-			latestTime = time.Now()
-		}
-
-		// Calculate Hotness Score
-		// Formula: (Articles * 2.0) + (UniqueOutlets * 3.0) + RecencyBonus
-		uniqueOutlets := len(outletList)
-		if uniqueOutlets == 0 {
-			uniqueOutlets = 1
-			outletList = []string{"Media Nasional"}
-		}
-
-		hotness := float64(len(c.articles)*2) + float64(uniqueOutlets*3)
-		hoursAgo := time.Since(latestTime).Hours()
-		if hoursAgo <= 6 {
-			hotness += 5.0
-		} else if hoursAgo <= 12 {
-			hotness += 3.0
-		} else if hoursAgo <= 24 {
-			hotness += 1.5
-		}
-
-		// Synthesize Title and Consensus Summary
-		title := c.articles[0].Title
-		summary := c.articles[0].Summary
-
-		if len(c.articles) > 1 && e.aiSvc != nil {
-			var contextBuilder strings.Builder
-			for i, a := range c.articles {
-				contextBuilder.WriteString(fmt.Sprintf("[%d] %s (%s)\nRingkasan: %s\n\n", i+1, a.Title, a.Source, a.Summary))
-			}
-
-			prompt := "Dari kumpulan artikel berita terkait di atas, rumuskan konsensus peristiwa dalam Bahasa Indonesia baku.\n" +
-				"ATURAN MUTLAK:\n" +
-				"1. HANYA berikan output persis dengan format: <Judul> || <Intisari>\n" +
-				"2. <Judul>: Judul topik utama ringkas, padat, menarik (maksimal 10 kata).\n" +
-				"3. <Intisari>: Ringkasan konsensus 2-3 kalimat objektif.\n" +
-				"4. DILARANG KERAS menyertakan proses berpikir, bahasa Inggris ('We need to...', 'The relevant article...'), atau tag <think>/<intisari>."
-
-			aiResp, provider, err := e.aiSvc.AnswerQuestion(ctx, contextBuilder.String(), prompt)
-			if err == nil && !ai.IsLocalFallback(provider) && !strings.Contains(aiResp, "[Pemberitahuan Sistem]") {
-				if cleanTitle, cleanSummary, ok := cleanClusterSynthesis(aiResp); ok {
-					title = cleanTitle
-					summary = cleanSummary
+		for i := range validClusters {
+			idx := i
+			c := validClusters[idx]
+			g.Go(func() error {
+				if gCtx.Err() != nil {
+					return gCtx.Err()
 				}
+				resultClusters[idx] = e.processAndSynthesizeCluster(gCtx, c)
+				return nil
+			})
+		}
+
+		if err := g.Wait(); err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
 			}
 		}
-
-		var primaryImg, secondaryImg string
-		for _, a := range c.articles {
-			if a.ImageURL != "" {
-				if primaryImg == "" {
-					primaryImg = a.ImageURL
-				} else if secondaryImg == "" && a.ImageURL != primaryImg {
-					secondaryImg = a.ImageURL
-					break
-				}
-			}
-		}
-
-		combinedText := title + " " + summary
-		if primaryImg == "" {
-			primaryImg = ResolveThematicImage(combinedText)
-		}
-		if secondaryImg == "" && len(c.articles) > 1 {
-			secondaryImg = ResolveSecondaryThematicImage(combinedText)
-		}
-
-		topicCluster := models.TopicCluster{
-			Title:             title,
-			Summary:           summary,
-			ImageURL:          primaryImg,
-			SecondaryImageURL: secondaryImg,
-			ArticleCount:      len(c.articles),
-			UniqueOutlets:     uniqueOutlets,
-			Outlets:           strings.Join(outletList, ", "),
-			HotnessScore:      hotness,
-			LastArticleTime:   latestTime,
-			Articles:          c.articles,
-		}
-
-		resultClusters = append(resultClusters, topicCluster)
 	}
 
 	// Sort by Hotness Score descending
@@ -405,6 +333,116 @@ func (e *ClusterEngine) Recompute(ctx context.Context) ([]models.TopicCluster, e
 	)
 
 	return resultClusters, nil
+}
+
+func (e *ClusterEngine) processAndSynthesizeCluster(ctx context.Context, c rawCluster) models.TopicCluster {
+	// Calculate outlets and recency
+	outletSet := make(map[string]bool)
+	var outletList []string
+	var latestTime time.Time
+
+	for _, a := range c.articles {
+		src := strings.TrimSpace(a.Source)
+		if src == "" {
+			src = extractOutletFromURL(a.URL)
+		}
+		if src != "" && !outletSet[strings.ToLower(src)] {
+			outletSet[strings.ToLower(src)] = true
+			outletList = append(outletList, src)
+		}
+		if a.PublishedAt.After(latestTime) {
+			latestTime = a.PublishedAt
+		}
+		if a.CreatedAt.After(latestTime) {
+			latestTime = a.CreatedAt
+		}
+	}
+
+	if latestTime.IsZero() {
+		latestTime = time.Now()
+	}
+
+	// Calculate Hotness Score
+	// Formula: (Articles * 2.0) + (UniqueOutlets * 3.0) + RecencyBonus
+	uniqueOutlets := len(outletList)
+	if uniqueOutlets == 0 {
+		uniqueOutlets = 1
+		outletList = []string{"Media Nasional"}
+	}
+
+	hotness := float64(len(c.articles)*2) + float64(uniqueOutlets*3)
+	hoursAgo := time.Since(latestTime).Hours()
+	if hoursAgo <= 6 {
+		hotness += 5.0
+	} else if hoursAgo <= 12 {
+		hotness += 3.0
+	} else if hoursAgo <= 24 {
+		hotness += 1.5
+	}
+
+	// Synthesize Title and Consensus Summary
+	title := c.articles[0].Title
+	summary := c.articles[0].Summary
+
+	if len(c.articles) > 1 && e.aiSvc != nil {
+		var contextBuilder strings.Builder
+		for i, a := range c.articles {
+			contextBuilder.WriteString(fmt.Sprintf("[%d] %s (%s)\nRingkasan: %s\n\n", i+1, a.Title, a.Source, a.Summary))
+		}
+
+		prompt := "Dari kumpulan artikel berita terkait di atas, rumuskan konsensus peristiwa dalam Bahasa Indonesia baku.\n" +
+			"ATURAN MUTLAK:\n" +
+			"1. HANYA berikan output persis dengan format: <Judul> || <Intisari>\n" +
+			"2. <Judul>: Judul topik utama ringkas, padat, menarik (maksimal 10 kata).\n" +
+			"3. <Intisari>: Ringkasan konsensus 2-3 kalimat objektif.\n" +
+			"4. DILARANG KERAS menyertakan proses berpikir, bahasa Inggris ('We need to...', 'The relevant article...'), atau tag <think>/<intisari>."
+
+		aiResp, provider, err := e.aiSvc.AnswerQuestion(ctx, contextBuilder.String(), prompt)
+		if err == nil && !ai.IsLocalFallback(provider) && !strings.Contains(aiResp, "[Pemberitahuan Sistem]") {
+			if cleanTitle, cleanSummary, ok := cleanClusterSynthesis(aiResp); ok {
+				title = cleanTitle
+				summary = cleanSummary
+			}
+		} else if err != nil && ctx.Err() == nil {
+			slog.Debug("AI synthesis skipped or failed for cluster, falling back to lead article metadata",
+				slog.String("lead_title", title),
+				slog.String("error", err.Error()),
+			)
+		}
+	}
+
+	var primaryImg, secondaryImg string
+	for _, a := range c.articles {
+		if a.ImageURL != "" {
+			if primaryImg == "" {
+				primaryImg = a.ImageURL
+			} else if secondaryImg == "" && a.ImageURL != primaryImg {
+				secondaryImg = a.ImageURL
+				break
+			}
+		}
+	}
+
+	combinedText := title + " " + summary
+	if primaryImg == "" {
+		primaryImg = ResolveThematicImage(combinedText)
+	}
+	if secondaryImg == "" && len(c.articles) > 1 {
+		secondaryImg = ResolveSecondaryThematicImage(combinedText)
+	}
+
+	return models.TopicCluster{
+		Title:             title,
+		Summary:           summary,
+		ImageURL:          primaryImg,
+		SecondaryImageURL: secondaryImg,
+		ArticleCount:      len(c.articles),
+		UniqueOutlets:     uniqueOutlets,
+		Outlets:           strings.Join(outletList, ", "),
+		HotnessScore:      hotness,
+		LastArticleTime:   latestTime,
+		Articles:          c.articles,
+	}
 }
 
 // GetTrending returns the top trending clusters formatted for consumer API.
