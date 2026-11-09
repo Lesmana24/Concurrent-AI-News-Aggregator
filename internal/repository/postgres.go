@@ -22,7 +22,45 @@ type PostgresRepository struct {
 func NewPostgresRepository(db *gorm.DB) *PostgresRepository {
 	repo := &PostgresRepository{db: db}
 	repo.InitVectorExtension()
+	repo.InitSearchIndexes()
 	return repo
+}
+
+// InitSearchIndexes creates the Full-Text Search (FTS) and Trigram (pg_trgm) GIN indexes
+// to accelerate keyword searches and eliminate sequential table scans.
+func (r *PostgresRepository) InitSearchIndexes() error {
+	if r.db == nil {
+		return nil
+	}
+
+	// 1. Core PostgreSQL Full-Text Search (FTS) GIN index
+	// Uses 'simple' dictionary: standard in all PG distributions, preserves Indonesian words & acronyms.
+	ftsIndexSQL := `CREATE INDEX IF NOT EXISTS idx_articles_fts ON articles 
+		USING gin (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(summary, '')));`
+	if err := r.db.Exec(ftsIndexSQL).Error; err != nil {
+		slog.Warn("FTS GIN index could not be created", slog.String("error", err.Error()))
+	} else {
+		slog.Info("FTS GIN index (idx_articles_fts) verified or created")
+	}
+
+	// 2. pg_trgm extension and GIN trigram indexes for partial/substring/fuzzy matching
+	if err := r.db.Exec("CREATE EXTENSION IF NOT EXISTS pg_trgm;").Error; err != nil {
+		slog.Warn("pg_trgm extension could not be enabled (trigram indexing will be skipped)", slog.String("error", err.Error()))
+		return nil
+	}
+
+	titleTrgmSQL := `CREATE INDEX IF NOT EXISTS idx_articles_title_trgm ON articles USING gin (title gin_trgm_ops);`
+	if err := r.db.Exec(titleTrgmSQL).Error; err != nil {
+		slog.Warn("failed to create trigram GIN index on articles.title", slog.String("error", err.Error()))
+	}
+
+	summaryTrgmSQL := `CREATE INDEX IF NOT EXISTS idx_articles_summary_trgm ON articles USING gin (summary gin_trgm_ops);`
+	if err := r.db.Exec(summaryTrgmSQL).Error; err != nil {
+		slog.Warn("failed to create trigram GIN index on articles.summary", slog.String("error", err.Error()))
+	}
+
+	slog.Info("Search GIN indexes (FTS and pg_trgm) successfully initialized")
+	return nil
 }
 
 // InitVectorExtension attempts to enable pgvector and auto-migrate the ArticleEmbedding schema.
@@ -237,8 +275,47 @@ func isAlphaNum(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
 }
 
-// SearchArticlesByKeyword searches articles in PostgreSQL using smart keyword matching as a fallback.
+// sanitizeTSQueryTerm extracts alphanumeric characters from a word to prevent syntax errors in to_tsquery.
+func sanitizeTSQueryTerm(word string) string {
+	var sb strings.Builder
+	for _, r := range word {
+		if isAlphaNum(r) || r > 127 {
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
+}
+
+// buildTSQuery constructs an OR-joined prefix-matching tsquery string for PostgreSQL to_tsquery.
+// e.g. ["kripto", "pajak"] -> "'kripto':* | 'pajak':*"
+func buildTSQuery(words []string) string {
+	seen := make(map[string]struct{}, len(words))
+	var terms []string
+	for _, w := range words {
+		clean := sanitizeTSQueryTerm(strings.ToLower(w))
+		if clean == "" {
+			continue
+		}
+		if _, exists := seen[clean]; exists {
+			continue
+		}
+		seen[clean] = struct{}{}
+		terms = append(terms, "'"+clean+"':*")
+	}
+	if len(terms) == 0 {
+		return ""
+	}
+	return strings.Join(terms, " | ")
+}
+
+// SearchArticlesByKeyword searches articles in PostgreSQL using index-backed FTS and trigram matching.
 func (r *PostgresRepository) SearchArticlesByKeyword(ctx context.Context, query string, limit int) ([]models.SemanticSearchResult, error) {
+	if r.db == nil {
+		return nil, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if limit <= 0 {
 		limit = 5
 	}
@@ -279,25 +356,43 @@ func (r *PostgresRepository) SearchArticlesByKeyword(ctx context.Context, query 
 		meaningfulWords = rawWords
 	}
 
-	// Fetch up to 40 candidate articles matching any keyword
-	var orConditions []string
-	var orArgs []interface{}
-	for _, w := range meaningfulWords {
-		pattern := "%" + w + "%"
-		orConditions = append(orConditions, "LOWER(title) LIKE ? OR LOWER(summary) LIKE ?")
-		orArgs = append(orArgs, pattern, pattern)
-	}
-
+	// 1. Primary candidate retrieval: PostgreSQL Full-Text Search (FTS) using GIN index (idx_articles_fts)
 	var candidates []models.Article
-	if len(orConditions) > 0 {
-		clause := strings.Join(orConditions, " OR ")
-		_ = r.db.WithContext(ctx).Model(&models.Article{}).
-			Where(clause, orArgs...).
+	tsQuery := buildTSQuery(meaningfulWords)
+	if tsQuery != "" {
+		ftsClause := "to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(summary, '')) @@ to_tsquery('simple', ?)"
+		err := r.db.WithContext(ctx).Model(&models.Article{}).
+			Where(ftsClause, tsQuery).
 			Order("id DESC").
 			Limit(40).
 			Find(&candidates).Error
+		if err != nil {
+			slog.Debug("FTS candidate query failed, falling back to trigram search", slog.String("error", err.Error()))
+			candidates = nil
+		}
 	}
 
+	// 2. Fallback candidate retrieval: Trigram-accelerated ILIKE search using GIN indexes (idx_articles_title_trgm, idx_articles_summary_trgm)
+	if len(candidates) == 0 && len(meaningfulWords) > 0 {
+		var orConditions []string
+		var orArgs []interface{}
+		for _, w := range meaningfulWords {
+			pattern := "%" + w + "%"
+			orConditions = append(orConditions, "title ILIKE ? OR summary ILIKE ?")
+			orArgs = append(orArgs, pattern, pattern)
+		}
+
+		if len(orConditions) > 0 {
+			clause := strings.Join(orConditions, " OR ")
+			_ = r.db.WithContext(ctx).Model(&models.Article{}).
+				Where(clause, orArgs...).
+				Order("id DESC").
+				Limit(40).
+				Find(&candidates).Error
+		}
+	}
+
+	// 3. Fallback to latest articles if no matches found
 	if len(candidates) == 0 {
 		_ = r.db.WithContext(ctx).Model(&models.Article{}).
 			Order("id DESC").
