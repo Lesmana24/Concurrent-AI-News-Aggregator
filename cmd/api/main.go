@@ -170,12 +170,21 @@ func main() {
 		rateLimitPerSec = rLimit
 	}
 
+	briefingTZ := strings.TrimSpace(os.Getenv("BRIEFING_TIMEZONE"))
+	if briefingTZ == "" {
+		briefingTZ = strings.TrimSpace(os.Getenv("TIMEZONE"))
+	}
+	if briefingTZ == "" {
+		briefingTZ = "Asia/Jakarta"
+	}
+
 	briefingCfg := scheduler.Config{
 		Enabled:                  briefingEnabled,
 		DailyHours:               briefingHours,
 		IntervalMinutes:          briefingInterval,
 		MaxArticlesPerDigest:     5,
 		BroadcastRateLimitPerSec: rateLimitPerSec,
+		Timezone:                 briefingTZ,
 	}
 
 	briefingEngine := scheduler.NewBriefingEngine(briefingCfg, repo, aiService, telegramBot)

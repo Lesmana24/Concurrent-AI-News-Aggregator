@@ -19,21 +19,23 @@ type BriefingRepository interface {
 
 // Config contains operational parameters for the briefing and push notification engine.
 type Config struct {
-	Enabled                 bool          `json:"enabled"`
-	DailyHours              []string      `json:"daily_hours"`                // e.g. ["07:00", "17:00"]
-	IntervalMinutes         int           `json:"interval_minutes"`           // Optional periodic run (0 = disabled, use DailyHours)
-	MaxArticlesPerDigest    int           `json:"max_articles_per_digest"`    // Default: 5
-	BroadcastRateLimitPerSec int          `json:"broadcast_rate_limit_per_sec"` // Default: 25 (Telegram limit is 30)
+	Enabled                  bool          `json:"enabled"`
+	DailyHours               []string      `json:"daily_hours"`                   // e.g. ["07:00", "17:00"]
+	IntervalMinutes          int           `json:"interval_minutes"`              // Optional periodic run (0 = disabled, use DailyHours)
+	MaxArticlesPerDigest     int           `json:"max_articles_per_digest"`       // Default: 5
+	BroadcastRateLimitPerSec int           `json:"broadcast_rate_limit_per_sec"` // Default: 25 (Telegram limit is 30)
+	Timezone                 string        `json:"timezone"`                      // e.g. "Asia/Jakarta", "WIB", "UTC" (Default: "Asia/Jakarta")
 }
 
 // DefaultConfig provides recommended production defaults.
 func DefaultConfig() Config {
 	return Config{
-		Enabled:                 true,
-		DailyHours:              []string{"07:00", "17:00"},
-		IntervalMinutes:         0,
-		MaxArticlesPerDigest:    5,
+		Enabled:                  true,
+		DailyHours:               []string{"07:00", "17:00"},
+		IntervalMinutes:          0,
+		MaxArticlesPerDigest:     5,
 		BroadcastRateLimitPerSec: 25,
+		Timezone:                 "Asia/Jakarta",
 	}
 }
 

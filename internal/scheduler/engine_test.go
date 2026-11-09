@@ -8,6 +8,7 @@ import (
 	"news-aggregator/internal/repository"
 	"sync"
 	"testing"
+	"time"
 )
 
 // mockBriefingRepo provides an in-memory implementation of BriefingRepository for unit tests.
@@ -411,5 +412,115 @@ func TestBriefingEngine_FloodWaitRetry(t *testing.T) {
 	}
 	if res.FailedCount != 0 {
 		t.Errorf("expected 0 failed count, got %d", res.FailedCount)
+	}
+}
+
+func TestResolveLocation(t *testing.T) {
+	tests := []struct {
+		name           string
+		tzInput        string
+		expectedOffset int // in seconds
+	}{
+		{
+			name:           "Default Asia/Jakarta",
+			tzInput:        "Asia/Jakarta",
+			expectedOffset: 7 * 3600,
+		},
+		{
+			name:           "WIB Abbreviation",
+			tzInput:        "WIB",
+			expectedOffset: 7 * 3600,
+		},
+		{
+			name:           "WITA Abbreviation",
+			tzInput:        "WITA",
+			expectedOffset: 8 * 3600,
+		},
+		{
+			name:           "WIT Abbreviation",
+			tzInput:        "WIT",
+			expectedOffset: 9 * 3600,
+		},
+		{
+			name:           "UTC",
+			tzInput:        "UTC",
+			expectedOffset: 0,
+		},
+		{
+			name:           "Numeric Offset +07:00",
+			tzInput:        "+07:00",
+			expectedOffset: 7 * 3600,
+		},
+		{
+			name:           "Empty string defaults to WIB",
+			tzInput:        "",
+			expectedOffset: 7 * 3600,
+		},
+		{
+			name:           "Unknown timezone falls back to WIB",
+			tzInput:        "NonExistent/Zone",
+			expectedOffset: 7 * 3600,
+		},
+	}
+
+	sampleTime := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			loc := ResolveLocation(tc.tzInput)
+			if loc == nil {
+				t.Fatalf("expected non-nil location for input %q", tc.tzInput)
+			}
+			_, offset := sampleTime.In(loc).Zone()
+			if offset != tc.expectedOffset {
+				t.Errorf("ResolveLocation(%q) offset = %d; want %d", tc.tzInput, offset, tc.expectedOffset)
+			}
+		})
+	}
+}
+
+func TestFormatIndonesianDate(t *testing.T) {
+	d1 := time.Date(1945, 8, 17, 10, 0, 0, 0, time.UTC)
+	assertDate := FormatIndonesianDate(d1)
+	if assertDate != "17 Agustus 1945" {
+		t.Errorf("expected '17 Agustus 1945', got %q", assertDate)
+	}
+
+	d2 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if got := FormatIndonesianDate(d2); got != "01 Januari 2026" {
+		t.Errorf("expected '01 Januari 2026', got %q", got)
+	}
+
+	d3 := time.Date(2026, 11, 9, 7, 0, 0, 0, time.UTC)
+	if got := FormatIndonesianDate(d3); got != "09 November 2026" {
+		t.Errorf("expected '09 November 2026', got %q", got)
+	}
+}
+
+func TestBriefingEngine_TimezoneAwareness(t *testing.T) {
+	repo := newMockBriefingRepo()
+	sender := newMockTelegramSender()
+
+	cfg := Config{
+		Enabled:                  true,
+		DailyHours:               []string{"07:00", "17:00"},
+		MaxArticlesPerDigest:     3,
+		BroadcastRateLimitPerSec: 100,
+		Timezone:                 "WIB",
+	}
+
+	engine := NewBriefingEngine(cfg, repo, &mockAIService{}, sender)
+	loc := engine.Location()
+	if loc == nil {
+		t.Fatalf("expected non-nil location from engine")
+	}
+
+	sample := time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)
+	inLoc := sample.In(loc)
+	// 00:00 UTC is 07:00 WIB
+	if inLoc.Hour() != 7 {
+		t.Errorf("expected 00:00 UTC to equal 07:00 in WIB, got %02d:00", inLoc.Hour())
+	}
+	if inLoc.Format("15:04") != "07:00" {
+		t.Errorf("expected time format '07:00', got %q", inLoc.Format("15:04"))
 	}
 }

@@ -30,12 +30,59 @@ func parseFloodWait(errMsg string) (int, bool) {
 	return 0, false
 }
 
+// indonesianMonths provides Indonesian translation for month names.
+var indonesianMonths = [...]string{
+	"", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+	"Juli", "Agustus", "September", "Oktober", "November", "Desember",
+}
+
+// FormatIndonesianDate formats a time.Time into an idiomatic Indonesian date string (e.g. "09 November 2026").
+func FormatIndonesianDate(t time.Time) string {
+	m := int(t.Month())
+	if m >= 1 && m <= 12 {
+		return fmt.Sprintf("%02d %s %d", t.Day(), indonesianMonths[m], t.Year())
+	}
+	return t.Format("02 January 2006")
+}
+
+// ResolveLocation resolves a timezone string into a *time.Location,
+// with robust fallbacks for Indonesian timezones (WIB, WITA, WIT) and UTC offsets
+// even on minimal container environments lacking tzdata.
+func ResolveLocation(tz string) *time.Location {
+	tz = strings.TrimSpace(tz)
+	if tz == "" {
+		tz = "Asia/Jakarta"
+	}
+
+	// 1. Standard IANA timezone lookup
+	loc, err := time.LoadLocation(tz)
+	if err == nil && loc != nil {
+		return loc
+	}
+
+	// 2. Fallbacks for Indonesian timezones if tzdata is not available on host/container
+	switch strings.ToUpper(tz) {
+	case "ASIA/JAKARTA", "WIB", "UTC+7", "+07:00", "+0700", "+07":
+		return time.FixedZone("WIB", 7*3600)
+	case "ASIA/MAKASSAR", "WITA", "UTC+8", "+08:00", "+0800", "+08":
+		return time.FixedZone("WITA", 8*3600)
+	case "ASIA/JAYAPURA", "WIT", "UTC+9", "+09:00", "+0900", "+09":
+		return time.FixedZone("WIT", 9*3600)
+	case "UTC", "GMT", "Z":
+		return time.UTC
+	}
+
+	// Default fallback to WIB (UTC+7) for Indonesian national news
+	return time.FixedZone("WIB", 7*3600)
+}
+
 // BriefingEngine orchestrates scheduled AI news syntheses and rate-limited push notifications.
 type BriefingEngine struct {
 	cfg          Config
 	repo         BriefingRepository
 	aiSvc        ai.AIService
 	sender       TelegramSender
+	location     *time.Location
 	stats        BroadcastStats
 	running      bool
 	lastRunDates map[string]bool
@@ -53,12 +100,18 @@ func NewBriefingEngine(cfg Config, repo BriefingRepository, aiSvc ai.AIService, 
 	if len(cfg.DailyHours) == 0 {
 		cfg.DailyHours = []string{"07:00", "17:00"}
 	}
+	if strings.TrimSpace(cfg.Timezone) == "" {
+		cfg.Timezone = "Asia/Jakarta"
+	}
+
+	loc := ResolveLocation(cfg.Timezone)
 
 	return &BriefingEngine{
 		cfg:          cfg,
 		repo:         repo,
 		aiSvc:        aiSvc,
 		sender:       sender,
+		location:     loc,
 		lastRunDates: make(map[string]bool),
 		stats: BroadcastStats{
 			TotalBroadcasts: 0,
@@ -67,6 +120,18 @@ func NewBriefingEngine(cfg Config, repo BriefingRepository, aiSvc ai.AIService, 
 			IsRunning:       false,
 		},
 	}
+}
+
+// Location returns the configured time.Location for the briefing engine.
+func (e *BriefingEngine) Location() *time.Location {
+	if e.location == nil {
+		return time.FixedZone("WIB", 7*3600)
+	}
+	return e.location
+}
+
+func (e *BriefingEngine) now() time.Time {
+	return time.Now().In(e.Location())
 }
 
 // Start launches the background scheduler loop.
@@ -78,6 +143,7 @@ func (e *BriefingEngine) Start(ctx context.Context) {
 
 	slog.Info("Starting Daily Briefing Scheduler daemon...",
 		slog.Any("daily_hours", e.cfg.DailyHours),
+		slog.String("timezone", e.Location().String()),
 		slog.Int("interval_minutes", e.cfg.IntervalMinutes),
 		slog.Int("rate_limit_per_sec", e.cfg.BroadcastRateLimitPerSec),
 	)
@@ -98,7 +164,7 @@ func (e *BriefingEngine) Start(ctx context.Context) {
 		}
 	}
 
-	// Mode 2: Specific Wall-Clock Daily Hours (07:00, 17:00 WIB)
+	// Mode 2: Specific Wall-Clock Daily Hours in configured timezone (e.g. 07:00, 17:00 WIB)
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -108,7 +174,7 @@ func (e *BriefingEngine) Start(ctx context.Context) {
 			slog.Info("Daily Briefing Scheduler stopped gracefully")
 			return
 		case <-ticker.C:
-			now := time.Now()
+			now := e.now()
 			currentHourMinute := now.Format("15:04")
 			todayDate := now.Format("2006-01-02")
 
@@ -124,7 +190,10 @@ func (e *BriefingEngine) Start(ctx context.Context) {
 					e.mu.Unlock()
 
 					if !alreadyRan {
-						slog.Info("Triggering scheduled daily briefing broadcast", slog.String("scheduled_time", scheduledHour))
+						slog.Info("Triggering scheduled daily briefing broadcast",
+							slog.String("scheduled_time", scheduledHour),
+							slog.String("timezone", e.Location().String()),
+						)
 						go func() {
 							_, _ = e.TriggerAll(context.Background(), "", "")
 						}()
@@ -278,7 +347,7 @@ func (e *BriefingEngine) BroadcastToTopic(ctx context.Context, topic string, cus
 			slog.Warn("Failed to synthesize briefing, using fallback notice", slog.String("topic", topic), slog.String("error", err.Error()))
 			messageContent = fmt.Sprintf("☀️ <b>Executive Briefing: %s</b>\n📅 <i>%s</i>\n\nMaaf, sistem sedang menyegarkan arsip berita untuk topik ini. Silakan cek kembali nanti atau ketik /briefing untuk mencoba lagi.",
 				html.EscapeString(strings.ToUpper(topic)),
-				time.Now().Format("02 January 2006"),
+				FormatIndonesianDate(e.now()),
 			)
 		} else {
 			messageContent = synthesized
@@ -420,7 +489,7 @@ func (e *BriefingEngine) SynthesizeBriefing(ctx context.Context, topic string) (
 	// Compile Final Telegram HTML Output
 	var finalMsg strings.Builder
 	finalMsg.WriteString(fmt.Sprintf("☀️ <b>Executive Briefing: %s</b>\n", html.EscapeString(strings.ToUpper(topic))))
-	finalMsg.WriteString(fmt.Sprintf("📅 <i>%s</i>\n\n", time.Now().Format("02 January 2006")))
+	finalMsg.WriteString(fmt.Sprintf("📅 <i>%s</i>\n\n", FormatIndonesianDate(e.now())))
 	finalMsg.WriteString(html.EscapeString(aiAnswer))
 	finalMsg.WriteString("\n\n📰 <b>Referensi Berita:</b>\n")
 

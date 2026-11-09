@@ -598,8 +598,14 @@ func (b *BotService) handleBriefing(ctx context.Context, chatID int64, topic str
 		return
 	}
 
+	loc := time.FixedZone("WIB", 7*3600)
+	if b.scheduler != nil && b.scheduler.Location() != nil {
+		loc = b.scheduler.Location()
+	}
+	formattedDate := scheduler.FormatIndonesianDate(time.Now().In(loc))
+
 	reply := fmt.Sprintf("☀️ <b>Executive Morning Briefing</b>\n📅 <i>%s</i>\n\n%s\n\n<i>Dihasilkan secara otomatis oleh @%s</i>",
-		time.Now().Format("02 January 2006"),
+		formattedDate,
 		html.EscapeString(resp.Answer),
 		html.EscapeString(b.bot.Self.UserName),
 	)
