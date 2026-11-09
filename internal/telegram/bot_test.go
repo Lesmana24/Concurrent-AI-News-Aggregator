@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"news-aggregator/internal/strutil"
 	"strings"
 	"testing"
@@ -108,12 +109,12 @@ func TestParseTelegramFloodWait(t *testing.T) {
 func TestBotService_PushNotification_DisabledSafety(t *testing.T) {
 	// Disabled bot returns nil without performing any action or panicking
 	bot := &BotService{enabled: false}
-	err := bot.PushNotification(nil, "Judul Berita", "Isi Berita")
+	err := bot.PushNotification(context.Background(), "Judul Berita", "Isi Berita")
 	assert.NoError(t, err)
 
 	// Enabled bot with nil repo returns nil without panicking
 	botEnabledNoRepo := &BotService{enabled: true, repo: nil}
-	err = botEnabledNoRepo.PushNotification(nil, "Judul Berita", "Isi Berita")
+	err = botEnabledNoRepo.PushNotification(context.Background(), "Judul Berita", "Isi Berita")
 	assert.NoError(t, err)
 }
 

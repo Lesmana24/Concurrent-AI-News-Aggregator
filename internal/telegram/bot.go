@@ -731,6 +731,9 @@ func (b *BotService) PushNotification(ctx context.Context, title, body string) e
 	if !b.IsEnabled() || b.repo == nil {
 		return nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	b.broadcastMu.Lock()
 	defer b.broadcastMu.Unlock()
