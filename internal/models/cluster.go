@@ -14,9 +14,9 @@ type TopicCluster struct {
 	Outlets           string    `json:"outlets"`                           // CSV list of outlets (e.g. "Antara, CNN, CNBC")
 	HotnessScore      float64   `gorm:"index" json:"hotness_score"`        // Trending score: (Articles*2) + (Outlets*3) + recency
 	Centroid          string    `gorm:"type:text" json:"-"`                // Serialized centroid vector
-	LastArticleTime   time.Time `json:"last_article_time"`                 // Timestamp of the most recent article in cluster
+	LastArticleTime   time.Time `gorm:"index" json:"last_article_time"`    // Timestamp of the most recent article in cluster
 	Articles          []Article `gorm:"many2many:cluster_articles;" json:"articles,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
+	CreatedAt         time.Time `gorm:"index" json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
 

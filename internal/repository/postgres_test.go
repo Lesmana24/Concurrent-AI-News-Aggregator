@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"news-aggregator/internal/models"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -152,6 +154,11 @@ func TestRepository_NilDB_SafeOperations(t *testing.T) {
 		t.Errorf("expected InitSearchIndexes to return nil on nil db, got %v", err)
 	}
 
+	// InitTimestampIndexes with nil db
+	if err := repo.InitTimestampIndexes(); err != nil {
+		t.Errorf("expected InitTimestampIndexes to return nil on nil db, got %v", err)
+	}
+
 	// SearchArticlesByKeyword with nil db
 	res, err := repo.SearchArticlesByKeyword(context.Background(), "kripto", 5)
 	if err != nil {
@@ -159,6 +166,48 @@ func TestRepository_NilDB_SafeOperations(t *testing.T) {
 	}
 	if res != nil {
 		t.Errorf("expected SearchArticlesByKeyword to return nil results on nil db, got %v", res)
+	}
+
+	// GetRecentArticlesByTopic with nil db
+	recentByTopic, err := repo.GetRecentArticlesByTopic(context.Background(), "politik", 24, 10)
+	if err != nil {
+		t.Errorf("expected GetRecentArticlesByTopic to return nil error on nil db, got %v", err)
+	}
+	if recentByTopic != nil {
+		t.Errorf("expected GetRecentArticlesByTopic to return nil articles on nil db, got %v", recentByTopic)
+	}
+
+	// GetRecentArticles with nil db
+	recent, err := repo.GetRecentArticles(context.Background(), 24)
+	if err != nil {
+		t.Errorf("expected GetRecentArticles to return nil error on nil db, got %v", err)
+	}
+	if recent != nil {
+		t.Errorf("expected GetRecentArticles to return nil articles on nil db, got %v", recent)
+	}
+}
+
+func TestArticleModel_TimestampIndexes(t *testing.T) {
+	articleType := reflect.TypeOf(models.Article{})
+
+	// Check CreatedAt
+	createdAtField, ok := articleType.FieldByName("CreatedAt")
+	if !ok {
+		t.Fatalf("expected models.Article to have CreatedAt field")
+	}
+	gormTagCreated := createdAtField.Tag.Get("gorm")
+	if !strings.Contains(gormTagCreated, "index:idx_articles_created_at") && !strings.Contains(gormTagCreated, "index") {
+		t.Errorf("expected CreatedAt field to have index in gorm tag, got: %q", gormTagCreated)
+	}
+
+	// Check PublishedAt
+	publishedAtField, ok := articleType.FieldByName("PublishedAt")
+	if !ok {
+		t.Fatalf("expected models.Article to have PublishedAt field")
+	}
+	gormTagPublished := publishedAtField.Tag.Get("gorm")
+	if !strings.Contains(gormTagPublished, "index:idx_articles_published_at") && !strings.Contains(gormTagPublished, "index") {
+		t.Errorf("expected PublishedAt field to have index in gorm tag, got: %q", gormTagPublished)
 	}
 }
 

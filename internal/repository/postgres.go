@@ -23,7 +23,44 @@ func NewPostgresRepository(db *gorm.DB) *PostgresRepository {
 	repo := &PostgresRepository{db: db}
 	repo.InitVectorExtension()
 	repo.InitSearchIndexes()
+	repo.InitTimestampIndexes()
 	return repo
+}
+
+// InitTimestampIndexes creates B-tree indexes on created_at and published_at
+// to accelerate recency filtering, enable BitmapOr scans, and eliminate sequential table scans.
+func (r *PostgresRepository) InitTimestampIndexes() error {
+	if r.db == nil {
+		return nil
+	}
+
+	indexes := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "idx_articles_created_at",
+			sql:  "CREATE INDEX IF NOT EXISTS idx_articles_created_at ON articles (created_at DESC);",
+		},
+		{
+			name: "idx_articles_published_at",
+			sql:  "CREATE INDEX IF NOT EXISTS idx_articles_published_at ON articles (published_at DESC);",
+		},
+		{
+			name: "idx_articles_source_created_at",
+			sql:  "CREATE INDEX IF NOT EXISTS idx_articles_source_created_at ON articles (source, created_at DESC);",
+		},
+	}
+
+	for _, idx := range indexes {
+		if err := r.db.Exec(idx.sql).Error; err != nil {
+			slog.Warn("Failed to create timestamp index", slog.String("index", idx.name), slog.String("error", err.Error()))
+		} else {
+			slog.Info("Timestamp index verified or created", slog.String("index", idx.name))
+		}
+	}
+
+	return nil
 }
 
 // InitSearchIndexes creates the Full-Text Search (FTS) and Trigram (pg_trgm) GIN indexes
@@ -617,6 +654,9 @@ func (r *PostgresRepository) DeactivateTelegramChat(chatID int64) error {
 
 // GetRecentArticlesByTopic retrieves recent articles (default within hours, with fallback) for a topic.
 func (r *PostgresRepository) GetRecentArticlesByTopic(ctx context.Context, topic string, hours int, limit int) ([]models.Article, error) {
+	if r.db == nil {
+		return nil, nil
+	}
 	if limit <= 0 {
 		limit = 5
 	}
@@ -633,7 +673,7 @@ func (r *PostgresRepository) GetRecentArticlesByTopic(ctx context.Context, topic
 	if isGeneric {
 		// Try fetching within time window
 		err := r.db.WithContext(ctx).Model(&models.Article{}).
-			Where("created_at >= ?", cutoff).
+			Where("created_at >= ? OR published_at >= ?", cutoff, cutoff).
 			Order("id DESC").
 			Limit(limit).
 			Find(&articles).Error
@@ -652,7 +692,7 @@ func (r *PostgresRepository) GetRecentArticlesByTopic(ctx context.Context, topic
 	// Topic-specific search
 	pattern := "%" + topic + "%"
 	err := r.db.WithContext(ctx).Model(&models.Article{}).
-		Where("(LOWER(title) LIKE ? OR LOWER(summary) LIKE ? OR LOWER(source) LIKE ?) AND created_at >= ?", pattern, pattern, pattern, cutoff).
+		Where("(LOWER(title) LIKE ? OR LOWER(summary) LIKE ? OR LOWER(source) LIKE ?) AND (created_at >= ? OR published_at >= ?)", pattern, pattern, pattern, cutoff, cutoff).
 		Order("id DESC").
 		Limit(limit).
 		Find(&articles).Error
@@ -722,6 +762,9 @@ func (r *PostgresRepository) GetSubscriptionStats() (*SubscriptionStats, error) 
 
 // GetRecentArticles fetches articles published or created within hours, or falls back to latest articles.
 func (r *PostgresRepository) GetRecentArticles(ctx context.Context, hours int) ([]models.Article, error) {
+	if r.db == nil {
+		return nil, nil
+	}
 	if hours <= 0 {
 		hours = 48
 	}

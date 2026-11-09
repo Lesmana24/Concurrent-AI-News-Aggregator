@@ -16,15 +16,18 @@ type User struct {
 }
 
 type Article struct {
-	gorm.Model
-	Title       string    `gorm:"not null" json:"title"`
-	Content     string    `gorm:"type:text" json:"content"`
-	URL         string    `gorm:"uniqueIndex;not null" json:"url"`
-	Source      string    `gorm:"index" json:"source"`
-	ImageURL    string    `gorm:"type:text;column:image_url" json:"image_url"`
-	AIProvider  string    `gorm:"column:ai_provider" json:"ai_provider"`
-	PublishedAt time.Time `json:"published_at"`
-	Summary     string    `gorm:"type:text" json:"summary"`
+	ID          uint           `gorm:"primaryKey" json:"id"`
+	CreatedAt   time.Time      `gorm:"index:idx_articles_created_at" json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+	Title       string         `gorm:"not null" json:"title"`
+	Content     string         `gorm:"type:text" json:"content"`
+	URL         string         `gorm:"uniqueIndex;not null" json:"url"`
+	Source      string         `gorm:"index" json:"source"`
+	ImageURL    string         `gorm:"type:text;column:image_url" json:"image_url"`
+	AIProvider  string         `gorm:"column:ai_provider" json:"ai_provider"`
+	PublishedAt time.Time      `gorm:"index:idx_articles_published_at" json:"published_at"`
+	Summary     string         `gorm:"type:text" json:"summary"`
 }
 
 type ArticleEmbedding struct {
