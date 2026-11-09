@@ -1,10 +1,26 @@
 .git
 .gitignore
 .env
+.env.*
 *.exe
 *.log
 scratch/
 .agent/
 .system_generated/
 coverage.txt
+
+# Node & Frontend artifacts
+node_modules/
+web/node_modules/
+web/dist/
+dist/
+
+# Go binaries & build artifacts
+bin/
+tmp/
+
+# IDE / Editor configs
+.vscode/
+.idea/
+
 
