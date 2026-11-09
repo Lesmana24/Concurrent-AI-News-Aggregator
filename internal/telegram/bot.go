@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"html"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -25,9 +27,55 @@ import (
 )
 
 var (
-	urlRegex     = regexp.MustCompile(`https?://[^\s]+`)
-	htmlTagRegex = regexp.MustCompile(`<[^>]*>`)
+	urlRegex       = regexp.MustCompile(`https?://[^\s]+`)
+	htmlTagRegex   = regexp.MustCompile(`<[^>]*>`)
+	floodWaitRegex = regexp.MustCompile(`(?i)(?:retry after|flood_wait_?)\s*(\d+)`)
 )
+
+// ParseTelegramFloodWait determines if an error is a Telegram 429 Flood Limit / Too Many Requests,
+// and extracts the recommended backoff duration in seconds.
+func ParseTelegramFloodWait(err error) (int, bool) {
+	if err == nil {
+		return 0, false
+	}
+
+	// 1. Direct type assertion / errors.As to *tgbotapi.Error
+	var tgErr *tgbotapi.Error
+	if errors.As(err, &tgErr) {
+		if tgErr.Code == 429 || tgErr.Code == 420 || tgErr.RetryAfter > 0 {
+			waitSec := tgErr.RetryAfter
+			if waitSec <= 0 {
+				waitSec = extractSecondsFromMessage(tgErr.Message)
+			}
+			if waitSec <= 0 {
+				waitSec = 3 // Safe minimum fallback backoff
+			}
+			return waitSec, true
+		}
+	}
+
+	// 2. Fallback check from error message text
+	errMsg := strings.ToLower(err.Error())
+	if strings.Contains(errMsg, "too many requests") || strings.Contains(errMsg, "retry after") || strings.Contains(errMsg, "flood") {
+		waitSec := extractSecondsFromMessage(err.Error())
+		if waitSec <= 0 {
+			waitSec = 3
+		}
+		return waitSec, true
+	}
+
+	return 0, false
+}
+
+func extractSecondsFromMessage(msg string) int {
+	matches := floodWaitRegex.FindStringSubmatch(msg)
+	if len(matches) > 1 {
+		if sec, err := strconv.Atoi(matches[1]); err == nil && sec > 0 {
+			return sec
+		}
+	}
+	return 0
+}
 
 // BotService manages the Telegram bot interaction, message routing, and push notifications.
 type BotService struct {
@@ -39,6 +87,7 @@ type BotService struct {
 	clustering   *clustering.ClusterEngine
 	systemAPIKey string
 	enabled      bool
+	broadcastMu  sync.Mutex
 }
 
 // NewBotService initializes the Telegram bot client. If token is empty, returns a disabled service gracefully.
@@ -127,7 +176,43 @@ func (b *BotService) WithClustering(c *clustering.ClusterEngine) *BotService {
 	return b
 }
 
-// SendNotification dispatches an HTML formatted notification to a specific Telegram chat ID.
+// sendWithRetry attempts to dispatch a message with automatic backoff retry on Telegram 429 flood wait errors.
+func (b *BotService) sendWithRetry(ctx context.Context, c tgbotapi.Chattable) (tgbotapi.Message, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	const maxRetries = 2
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		msg, err := b.bot.Send(c)
+		if err == nil {
+			return msg, nil
+		}
+
+		waitSec, isFlood := ParseTelegramFloodWait(err)
+		if isFlood && attempt < maxRetries {
+			if waitSec > 60 {
+				waitSec = 60 // Cap backoff at 60 seconds
+			}
+			slog.Warn("Telegram API flood limit encountered, backing off before retry",
+				slog.Int("attempt", attempt+1),
+				slog.Int("wait_seconds", waitSec),
+				slog.String("error", err.Error()),
+			)
+			select {
+			case <-time.After(time.Duration(waitSec) * time.Second):
+				continue
+			case <-ctx.Done():
+				return msg, ctx.Err()
+			}
+		}
+
+		return msg, err
+	}
+	return tgbotapi.Message{}, fmt.Errorf("failed after retries")
+}
+
+// SendNotification dispatches an HTML formatted notification to a specific Telegram chat ID with flood control.
 func (b *BotService) SendNotification(chatID int64, htmlContent string) error {
 	if !b.IsEnabled() {
 		return fmt.Errorf("telegram bot is not enabled")
@@ -135,7 +220,7 @@ func (b *BotService) SendNotification(chatID int64, htmlContent string) error {
 	msg := tgbotapi.NewMessage(chatID, htmlContent)
 	msg.ParseMode = "HTML"
 	msg.DisableWebPagePreview = false
-	_, err := b.bot.Send(msg)
+	_, err := b.sendWithRetry(context.Background(), msg)
 	return err
 }
 
@@ -612,7 +697,16 @@ func (b *BotService) sendMessage(chatID int64, text string) {
 	msg.ParseMode = "HTML"
 	msg.DisableWebPagePreview = false
 
-	if _, err := b.bot.Send(msg); err != nil {
+	if _, err := b.sendWithRetry(context.Background(), msg); err != nil {
+		// If error is flood limit, avoid hammering Telegram with repeated fallback messages
+		if _, isFlood := ParseTelegramFloodWait(err); isFlood {
+			slog.Warn("Failed to send Telegram message due to persistent flood limit",
+				slog.Int64("chat_id", chatID),
+				slog.String("error", err.Error()),
+			)
+			return
+		}
+
 		// Fallback to plain text if HTML tags fail to parse
 		msg.ParseMode = ""
 		plain := stripHTML(text)
@@ -620,7 +714,7 @@ func (b *BotService) sendMessage(chatID int64, text string) {
 			plain = strutil.TruncateRunes(plain, 3950) + "\n\n...(pesan dipotong karena batas panjang Telegram)"
 		}
 		msg.Text = plain
-		_, _ = b.bot.Send(msg)
+		_, _ = b.sendWithRetry(context.Background(), msg)
 	}
 }
 
@@ -629,24 +723,70 @@ func (b *BotService) sendChatAction(chatID int64, action string) {
 		return
 	}
 	actionMsg := tgbotapi.NewChatAction(chatID, action)
-	_, _ = b.bot.Send(actionMsg)
+	_, _ = b.sendWithRetry(context.Background(), actionMsg)
 }
 
-// PushNotification broadcasts a message to all active subscribers.
+// PushNotification broadcasts a message to all active subscribers with deduplication, rate limiting, and flood control.
 func (b *BotService) PushNotification(ctx context.Context, title, body string) error {
 	if !b.IsEnabled() || b.repo == nil {
 		return nil
 	}
+
+	b.broadcastMu.Lock()
+	defer b.broadcastMu.Unlock()
 
 	subs, err := b.repo.GetActiveTelegramSubscriptions()
 	if err != nil {
 		return err
 	}
 
+	if len(subs) == 0 {
+		return nil
+	}
+
+	// 1. Deduplicate by ChatID to avoid multiple messages to multi-topic subscribers
+	seenChats := make(map[int64]struct{}, len(subs))
+	var uniqueChatIDs []int64
+	for _, sub := range subs {
+		if _, seen := seenChats[sub.ChatID]; !seen {
+			seenChats[sub.ChatID] = struct{}{}
+			uniqueChatIDs = append(uniqueChatIDs, sub.ChatID)
+		}
+	}
+
 	messageText := fmt.Sprintf("📢 <b>PEMBERITAHUAN BERITA</b>\n\n<b>%s</b>\n\n%s", html.EscapeString(title), html.EscapeString(body))
 
-	for _, sub := range subs {
-		b.sendMessage(sub.ChatID, messageText)
+	// 2. Safe rate-limited dispatch (25 messages/second = 40ms interval, well below Telegram's 30/sec limit)
+	const delayBetweenMessages = 40 * time.Millisecond
+
+	for _, chatID := range uniqueChatIDs {
+		// Respect context cancellation
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		err := b.SendNotification(chatID, messageText)
+		if err != nil {
+			errMsg := err.Error()
+			lowerErr := strings.ToLower(errMsg)
+
+			// Auto-deactivate unreachable or blocked chats
+			if strings.Contains(lowerErr, "blocked") || strings.Contains(lowerErr, "not found") || strings.Contains(lowerErr, "deactivated") || strings.Contains(lowerErr, "forbidden") {
+				slog.Info("Auto-deactivating subscription for unreachable chat", slog.Int64("chat_id", chatID), slog.String("reason", errMsg))
+				_ = b.repo.DeactivateTelegramChat(chatID)
+			} else if waitSec, isFlood := ParseTelegramFloodWait(err); isFlood {
+				slog.Warn("Telegram flood wait in PushNotification, pausing broadcast", slog.Int("wait_seconds", waitSec), slog.Int64("chat_id", chatID))
+				select {
+				case <-time.After(time.Duration(waitSec) * time.Second):
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+		}
+
+		time.Sleep(delayBetweenMessages)
 	}
 
 	return nil

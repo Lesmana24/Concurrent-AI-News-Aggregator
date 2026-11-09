@@ -163,12 +163,19 @@ func main() {
 		briefingHours = []string{"07:00", "17:00"}
 	}
 
+	rateLimitPerSec := 25
+	if rLimit, err := strconv.Atoi(os.Getenv("TELEGRAM_RATE_LIMIT_PER_SEC")); err == nil && rLimit > 0 && rLimit <= 30 {
+		rateLimitPerSec = rLimit
+	} else if rLimit, err := strconv.Atoi(os.Getenv("BROADCAST_RATE_LIMIT_PER_SEC")); err == nil && rLimit > 0 && rLimit <= 30 {
+		rateLimitPerSec = rLimit
+	}
+
 	briefingCfg := scheduler.Config{
 		Enabled:                  briefingEnabled,
 		DailyHours:               briefingHours,
 		IntervalMinutes:          briefingInterval,
 		MaxArticlesPerDigest:     5,
-		BroadcastRateLimitPerSec: 25,
+		BroadcastRateLimitPerSec: rateLimitPerSec,
 	}
 
 	briefingEngine := scheduler.NewBriefingEngine(briefingCfg, repo, aiService, telegramBot)

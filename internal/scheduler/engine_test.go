@@ -114,18 +114,25 @@ type mockTelegramSender struct {
 	mu           sync.Mutex
 	sentMessages map[int64][]string
 	failChats    map[int64]error
+	floodChats   map[int64]int
 }
 
 func newMockTelegramSender() *mockTelegramSender {
 	return &mockTelegramSender{
 		sentMessages: make(map[int64][]string),
 		failChats:    make(map[int64]error),
+		floodChats:   make(map[int64]int),
 	}
 }
 
 func (m *mockTelegramSender) SendNotification(chatID int64, htmlContent string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if remaining, ok := m.floodChats[chatID]; ok && remaining > 0 {
+		m.floodChats[chatID]--
+		return fmt.Errorf("Too Many Requests: retry after 1")
+	}
 
 	if err, shouldFail := m.failChats[chatID]; shouldFail {
 		return err
@@ -275,5 +282,134 @@ func TestBriefingEngine_PreventConcurrentBroadcast(t *testing.T) {
 	_, err := engine.TriggerAll(context.Background(), "", "")
 	if err == nil {
 		t.Fatalf("expected error when triggering while already running, got nil")
+	}
+}
+
+func TestParseFloodWait(t *testing.T) {
+	tests := []struct {
+		name        string
+		errMsg      string
+		expectedSec int
+		expectedOk  bool
+	}{
+		{
+			name:        "Standard retry after seconds",
+			errMsg:      "Too Many Requests: retry after 5",
+			expectedSec: 5,
+			expectedOk:  true,
+		},
+		{
+			name:        "Flood wait format",
+			errMsg:      "Bad Request: FLOOD_WAIT_12",
+			expectedSec: 12,
+			expectedOk:  true,
+		},
+		{
+			name:        "Generic 429 without seconds defaults to 3",
+			errMsg:      "Telegram API error 429: Too Many Requests",
+			expectedSec: 3,
+			expectedOk:  true,
+		},
+		{
+			name:        "Non-flood error returns false",
+			errMsg:      "Forbidden: bot was blocked by the user",
+			expectedSec: 0,
+			expectedOk:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sec, ok := parseFloodWait(tc.errMsg)
+			if ok != tc.expectedOk {
+				t.Errorf("parseFloodWait(%q) ok = %v; want %v", tc.errMsg, ok, tc.expectedOk)
+			}
+			if sec != tc.expectedSec {
+				t.Errorf("parseFloodWait(%q) sec = %d; want %d", tc.errMsg, sec, tc.expectedSec)
+			}
+		})
+	}
+}
+
+func TestBriefingEngine_TriggerAll_CustomMessage_DeduplicatesAcrossTopics(t *testing.T) {
+	repo := newMockBriefingRepo()
+	// User 101 subscribes to two topics
+	repo.Subscribe(101, "teknologi")
+	repo.Subscribe(101, "ekonomi")
+	// User 102 subscribes to one topic
+	repo.Subscribe(102, "teknologi")
+
+	sender := newMockTelegramSender()
+	cfg := Config{
+		Enabled:                  true,
+		BroadcastRateLimitPerSec: 100,
+		MaxArticlesPerDigest:     3,
+	}
+
+	engine := NewBriefingEngine(cfg, repo, &mockAIService{}, sender)
+
+	// Admin triggers broadcast with global customMessage and no topic filter
+	results, err := engine.TriggerAll(context.Background(), "", "Pemberitahuan Sistem Pemeliharaan")
+	if err != nil {
+		t.Fatalf("unexpected error from TriggerAll: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 global broadcast result, got %d", len(results))
+	}
+
+	res := results[0]
+	if res.Topic != "all" {
+		t.Errorf("expected topic 'all', got %q", res.Topic)
+	}
+	if res.TotalSubscribers != 2 {
+		t.Errorf("expected 2 unique subscribers, got %d", res.TotalSubscribers)
+	}
+	if res.SuccessCount != 2 {
+		t.Errorf("expected 2 success count, got %d", res.SuccessCount)
+	}
+
+	// Verify User 101 only received the announcement ONCE (not twice)
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	if len(sender.sentMessages[101]) != 1 {
+		t.Errorf("expected user 101 to receive exactly 1 message, got %d", len(sender.sentMessages[101]))
+	}
+	if len(sender.sentMessages[102]) != 1 {
+		t.Errorf("expected user 102 to receive exactly 1 message, got %d", len(sender.sentMessages[102]))
+	}
+}
+
+func TestBriefingEngine_FloodWaitRetry(t *testing.T) {
+	repo := newMockBriefingRepo()
+	repo.Subscribe(301, "teknologi")
+
+	sender := newMockTelegramSender()
+	// Simulate 1 flood failure before succeeding on retry
+	sender.floodChats[301] = 1
+
+	cfg := Config{
+		Enabled:                  true,
+		BroadcastRateLimitPerSec: 100,
+		MaxArticlesPerDigest:     3,
+	}
+
+	engine := NewBriefingEngine(cfg, repo, &mockAIService{}, sender)
+
+	results, err := engine.TriggerAll(context.Background(), "teknologi", "Test Pesan")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	res := results[0]
+	if res.SuccessCount != 1 {
+		t.Errorf("expected 1 success count after flood wait retry, got %d", res.SuccessCount)
+	}
+	if res.FailedCount != 0 {
+		t.Errorf("expected 0 failed count, got %d", res.FailedCount)
 	}
 }

@@ -6,10 +6,29 @@ import (
 	"html"
 	"log/slog"
 	"news-aggregator/internal/ai"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+var floodWaitRegex = regexp.MustCompile(`(?i)(?:retry after|flood_wait_?)\s*(\d+)`)
+
+// parseFloodWait extracts the flood wait duration in seconds from an error message if it is a 429/flood limit.
+func parseFloodWait(errMsg string) (int, bool) {
+	lower := strings.ToLower(errMsg)
+	if strings.Contains(lower, "too many requests") || strings.Contains(lower, "retry after") || strings.Contains(lower, "flood") || strings.Contains(lower, "429") {
+		matches := floodWaitRegex.FindStringSubmatch(errMsg)
+		if len(matches) > 1 {
+			if sec, err := strconv.Atoi(matches[1]); err == nil && sec > 0 {
+				return sec, true
+			}
+		}
+		return 3, true // Default safe minimum backoff
+	}
+	return 0, false
+}
 
 // BriefingEngine orchestrates scheduled AI news syntheses and rate-limited push notifications.
 type BriefingEngine struct {
@@ -134,6 +153,11 @@ func (e *BriefingEngine) TriggerAll(ctx context.Context, topicFilter string, cus
 		e.mu.Unlock()
 	}()
 
+	// If custom announcement is provided without topicFilter, broadcast to all unique subscribers once
+	if customMessage != "" && topicFilter == "" {
+		return e.broadcastGlobalMessage(ctx, customMessage)
+	}
+
 	var topics []string
 	if topicFilter != "" {
 		topics = []string{strings.ToLower(strings.TrimSpace(topicFilter))}
@@ -177,6 +201,52 @@ func (e *BriefingEngine) TriggerAll(ctx context.Context, topicFilter string, cus
 	return results, nil
 }
 
+// broadcastGlobalMessage sends a custom announcement to all unique active subscribers exactly once.
+func (e *BriefingEngine) broadcastGlobalMessage(ctx context.Context, customMessage string) ([]BroadcastResult, error) {
+	if e.repo == nil {
+		return nil, fmt.Errorf("repository is not available")
+	}
+
+	startTime := time.Now()
+	topics, err := e.repo.GetActiveTopics()
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve active topics: %w", err)
+	}
+
+	seen := make(map[int64]struct{})
+	var uniqueChatIDs []int64
+	for _, t := range topics {
+		ids, err := e.repo.GetSubscribersByTopic(t)
+		if err != nil {
+			continue
+		}
+		for _, id := range ids {
+			if _, exists := seen[id]; !exists {
+				seen[id] = struct{}{}
+				uniqueChatIDs = append(uniqueChatIDs, id)
+			}
+		}
+	}
+
+	res, err := e.dispatchToSubscribers(ctx, "all", uniqueChatIDs, customMessage)
+	if err != nil {
+		return nil, err
+	}
+
+	totalDuration := time.Since(startTime)
+
+	// Update cumulative stats
+	e.mu.Lock()
+	e.stats.TotalBroadcasts++
+	e.stats.LastRunTime = startTime
+	e.stats.LastDurationMs = totalDuration.Milliseconds()
+	e.stats.TotalSent += res.SuccessCount
+	e.stats.TotalFailed += res.FailedCount
+	e.mu.Unlock()
+
+	return []BroadcastResult{*res}, nil
+}
+
 // BroadcastToTopic compiles and broadcasts a digest for a specific topic to all its active subscribers.
 func (e *BriefingEngine) BroadcastToTopic(ctx context.Context, topic string, customMessage string) (*BroadcastResult, error) {
 	if e.repo == nil {
@@ -188,17 +258,14 @@ func (e *BriefingEngine) BroadcastToTopic(ctx context.Context, topic string, cus
 		return nil, fmt.Errorf("failed to retrieve subscribers for topic %s: %w", topic, err)
 	}
 
-	result := &BroadcastResult{
-		TriggeredAt:      time.Now(),
-		Topic:            topic,
-		TotalSubscribers: len(chatIDs),
-		SuccessCount:     0,
-		FailedCount:      0,
-	}
-
-	if len(chatIDs) == 0 {
-		result.Duration = time.Since(result.TriggeredAt)
-		return result, nil
+	// Deduplicate chat IDs within this topic
+	seen := make(map[int64]struct{}, len(chatIDs))
+	var uniqueChatIDs []int64
+	for _, id := range chatIDs {
+		if _, exists := seen[id]; !exists {
+			seen[id] = struct{}{}
+			uniqueChatIDs = append(uniqueChatIDs, id)
+		}
 	}
 
 	// 1. Synthesize briefing content
@@ -218,7 +285,25 @@ func (e *BriefingEngine) BroadcastToTopic(ctx context.Context, topic string, cus
 		}
 	}
 
-	// 2. Dispatch rate-limited broadcast
+	// 2. Dispatch rate-limited and flood-controlled broadcast
+	return e.dispatchToSubscribers(ctx, topic, uniqueChatIDs, messageContent)
+}
+
+// dispatchToSubscribers handles the rate-limited, flood-controlled dispatch loop to a list of unique chat IDs.
+func (e *BriefingEngine) dispatchToSubscribers(ctx context.Context, topic string, chatIDs []int64, messageContent string) (*BroadcastResult, error) {
+	result := &BroadcastResult{
+		TriggeredAt:      time.Now(),
+		Topic:            topic,
+		TotalSubscribers: len(chatIDs),
+		SuccessCount:     0,
+		FailedCount:      0,
+	}
+
+	if len(chatIDs) == 0 {
+		result.Duration = time.Since(result.TriggeredAt)
+		return result, nil
+	}
+
 	if e.sender == nil {
 		result.Duration = time.Since(result.TriggeredAt)
 		result.Errors = append(result.Errors, "telegram sender is disabled or nil")
@@ -242,15 +327,39 @@ func (e *BriefingEngine) BroadcastToTopic(ctx context.Context, topic string, cus
 
 		err := e.sender.SendNotification(chatID, messageContent)
 		if err != nil {
-			result.FailedCount++
 			errMsg := err.Error()
-			result.Errors = append(result.Errors, fmt.Sprintf("chat %d: %s", chatID, errMsg))
-
-			// Check if user blocked bot or chat is invalid -> auto-deactivate subscription
 			lowerErr := strings.ToLower(errMsg)
+
+			// Auto-deactivate subscription if user blocked bot or chat is invalid
 			if strings.Contains(lowerErr, "blocked") || strings.Contains(lowerErr, "not found") || strings.Contains(lowerErr, "deactivated") || strings.Contains(lowerErr, "forbidden") {
 				slog.Info("Auto-deactivating subscription for unreachable chat", slog.Int64("chat_id", chatID), slog.String("reason", errMsg))
 				_ = e.repo.DeactivateTelegramChat(chatID)
+				result.FailedCount++
+				result.Errors = append(result.Errors, fmt.Sprintf("chat %d: %s", chatID, errMsg))
+			} else if waitSec, isFlood := parseFloodWait(errMsg); isFlood {
+				// Telegram Flood Control: pause dispatch loop and retry once for this chat
+				slog.Warn("Telegram flood limit encountered during broadcast dispatch, pausing",
+					slog.Int("wait_seconds", waitSec),
+					slog.Int64("chat_id", chatID),
+				)
+				select {
+				case <-time.After(time.Duration(waitSec) * time.Second):
+					// Retry dispatch once for this subscriber
+					retryErr := e.sender.SendNotification(chatID, messageContent)
+					if retryErr == nil {
+						result.SuccessCount++
+					} else {
+						result.FailedCount++
+						result.Errors = append(result.Errors, fmt.Sprintf("chat %d: %s (after retry)", chatID, retryErr.Error()))
+					}
+				case <-ctx.Done():
+					result.Errors = append(result.Errors, "broadcast interrupted during flood wait: context cancelled")
+					result.Duration = time.Since(result.TriggeredAt)
+					return result, ctx.Err()
+				}
+			} else {
+				result.FailedCount++
+				result.Errors = append(result.Errors, fmt.Sprintf("chat %d: %s", chatID, errMsg))
 			}
 		} else {
 			result.SuccessCount++
