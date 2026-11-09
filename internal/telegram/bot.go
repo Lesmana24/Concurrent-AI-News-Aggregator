@@ -212,16 +212,35 @@ func (b *BotService) sendWithRetry(ctx context.Context, c tgbotapi.Chattable) (t
 	return tgbotapi.Message{}, fmt.Errorf("failed after retries")
 }
 
-// SendNotification dispatches an HTML formatted notification to a specific Telegram chat ID with flood control.
+// SendNotification dispatches an HTML formatted notification to a specific Telegram chat ID with chunking and flood control.
 func (b *BotService) SendNotification(chatID int64, htmlContent string) error {
 	if !b.IsEnabled() {
 		return fmt.Errorf("telegram bot is not enabled")
 	}
-	msg := tgbotapi.NewMessage(chatID, htmlContent)
-	msg.ParseMode = "HTML"
-	msg.DisableWebPagePreview = false
-	_, err := b.sendWithRetry(context.Background(), msg)
-	return err
+
+	chunks := SplitTelegramMessage(htmlContent, DefaultMaxTelegramMessageRunes)
+	for i, chunk := range chunks {
+		msg := tgbotapi.NewMessage(chatID, chunk)
+		msg.ParseMode = "HTML"
+		msg.DisableWebPagePreview = false
+
+		if _, err := b.sendWithRetry(context.Background(), msg); err != nil {
+			if _, isFlood := ParseTelegramFloodWait(err); isFlood {
+				return err
+			}
+			// Fallback to plain text for this chunk if HTML entity parsing fails
+			msg.ParseMode = ""
+			msg.Text = stripHTML(chunk)
+			if _, plainErr := b.sendWithRetry(context.Background(), msg); plainErr != nil {
+				return plainErr
+			}
+		}
+
+		if i < len(chunks)-1 {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	return nil
 }
 
 // IsEnabled returns true if the Telegram bot service is active.
@@ -693,28 +712,32 @@ func (b *BotService) sendMessage(chatID int64, text string) {
 	if !b.IsEnabled() {
 		return
 	}
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ParseMode = "HTML"
-	msg.DisableWebPagePreview = false
 
-	if _, err := b.sendWithRetry(context.Background(), msg); err != nil {
-		// If error is flood limit, avoid hammering Telegram with repeated fallback messages
-		if _, isFlood := ParseTelegramFloodWait(err); isFlood {
-			slog.Warn("Failed to send Telegram message due to persistent flood limit",
-				slog.Int64("chat_id", chatID),
-				slog.String("error", err.Error()),
-			)
-			return
+	chunks := SplitTelegramMessage(text, DefaultMaxTelegramMessageRunes)
+	for i, chunk := range chunks {
+		msg := tgbotapi.NewMessage(chatID, chunk)
+		msg.ParseMode = "HTML"
+		msg.DisableWebPagePreview = false
+
+		if _, err := b.sendWithRetry(context.Background(), msg); err != nil {
+			// If error is flood limit, avoid hammering Telegram with repeated fallback messages
+			if _, isFlood := ParseTelegramFloodWait(err); isFlood {
+				slog.Warn("Failed to send Telegram message due to persistent flood limit",
+					slog.Int64("chat_id", chatID),
+					slog.String("error", err.Error()),
+				)
+				return
+			}
+
+			// Fallback to plain text for this chunk if HTML tags fail to parse
+			msg.ParseMode = ""
+			msg.Text = stripHTML(chunk)
+			_, _ = b.sendWithRetry(context.Background(), msg)
 		}
 
-		// Fallback to plain text if HTML tags fail to parse
-		msg.ParseMode = ""
-		plain := stripHTML(text)
-		if utf8.RuneCountInString(plain) > 4000 {
-			plain = strutil.TruncateRunes(plain, 3950) + "\n\n...(pesan dipotong karena batas panjang Telegram)"
+		if i < len(chunks)-1 {
+			time.Sleep(50 * time.Millisecond)
 		}
-		msg.Text = plain
-		_, _ = b.sendWithRetry(context.Background(), msg)
 	}
 }
 
