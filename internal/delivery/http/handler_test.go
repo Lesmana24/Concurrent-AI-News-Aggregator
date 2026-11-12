@@ -12,6 +12,7 @@ import (
 	"news-aggregator/internal/middleware"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/service"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -46,6 +47,18 @@ func (m *mockNewsService) RotateAPIKey(ctx context.Context, currentAPIKey string
 		return m.rotateFunc(ctx, currentAPIKey)
 	}
 	return "", "", nil, nil
+}
+
+func (m *mockNewsService) GetOrCreateGuestSession(ctx context.Context, clientIdentifier string) (*models.User, error) {
+	if m.getUserFunc != nil {
+		return m.getUserFunc("guest")
+	}
+	return &models.User{
+		APIKey:     "guest_mock_key",
+		Quota:      5,
+		DailyLimit: 5,
+		IsGuest:    true,
+	}, nil
 }
 
 func (m *mockNewsService) AnswerQuestion(ctx context.Context, apiKey string, req models.NewsQARequest) (*models.NewsQAResponse, error) {
@@ -95,6 +108,7 @@ func setupTestRouter(svc service.NewsService) *gin.Engine {
 	r := gin.New()
 	handler := NewNewsHandler(svc)
 	r.POST("/api/v1/auth/register", handler.RegisterUser)
+	r.POST("/api/v1/auth/guest-session", handler.GuestSession)
 	r.POST("/api/v1/user/rotate-key", handler.RotateAPIKey)
 	r.POST("/api/v1/summarize", handler.Summarize)
 	r.POST("/api/v1/news/qa/stream", handler.QAStream)
@@ -453,6 +467,47 @@ func TestRotateAPIKey_SystemUser_Returns403(t *testing.T) {
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	assert.Contains(t, w.Body.String(), "System account")
+}
+
+func TestRotateAPIKey_GuestUser_Returns403(t *testing.T) {
+	mockSvc := &mockNewsService{
+		rotateFunc: func(ctx context.Context, currentAPIKey string) (string, string, *models.User, error) {
+			return "", "", nil, service.ErrGuestCannotRotateKey
+		},
+	}
+
+	router := setupTestRouter(mockSvc)
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/user/rotate-key", nil)
+	req.Header.Set("X-API-KEY", "guest_session_key")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "Akun tamu tidak dapat merotasi")
+}
+
+func TestGuestSession_Success(t *testing.T) {
+	mockSvc := &mockNewsService{}
+	router := setupTestRouter(mockSvc)
+
+	payload := `{"device_id":"device-uuid-123"}`
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/guest-session", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, "success", resp["status"])
+	data := resp["data"].(map[string]interface{})
+	assert.Equal(t, "guest_mock_key", data["api_key"])
+	assert.Equal(t, float64(5), data["quota"])
+	assert.Equal(t, true, data["is_guest"])
 }
 
 func TestRotateAPIKey_MissingAuth_Returns401(t *testing.T) {

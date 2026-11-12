@@ -86,14 +86,28 @@ export interface UserMe {
   id: number
   email: string
   quota: number
+  daily_limit?: number
+  is_guest?: boolean
   status: string
   api_key: string
+}
+
+export interface GuestSessionResponse {
+  status: string
+  data: {
+    api_key: string
+    quota: number
+    daily_limit: number
+    is_guest: boolean
+    reset_at: string
+  }
 }
 
 export interface RegisterUserResponse {
   message: string
   api_key: string
   quota: number
+  daily_limit?: number
   email: string
 }
 
@@ -101,6 +115,7 @@ export interface RotateAPIKeyResponse {
   message: string
   api_key: string
   quota: number
+  daily_limit?: number
   email: string
 }
 

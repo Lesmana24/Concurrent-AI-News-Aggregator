@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"news-aggregator/internal/models"
 	"sort"
@@ -132,6 +133,9 @@ func (r *PostgresRepository) HasVectorSupport() bool {
 }
 
 func (r *PostgresRepository) GetUserByKey(apiKey string) (*models.User, error) {
+	if r.db == nil {
+		return nil, nil
+	}
 	var user models.User
 	if err := r.db.Where("api_key = ?", apiKey).First(&user).Error; err != nil {
 		return nil, err
@@ -141,6 +145,9 @@ func (r *PostgresRepository) GetUserByKey(apiKey string) (*models.User, error) {
 
 // GetUserByEmail retrieves a user by email address.
 func (r *PostgresRepository) GetUserByEmail(email string) (*models.User, error) {
+	if r.db == nil {
+		return nil, nil
+	}
 	var user models.User
 	if err := r.db.Where("LOWER(email) = LOWER(?)", strings.TrimSpace(email)).First(&user).Error; err != nil {
 		return nil, err
@@ -150,11 +157,16 @@ func (r *PostgresRepository) GetUserByEmail(email string) (*models.User, error) 
 
 // CreateUser creates a new user with an initial quota.
 func (r *PostgresRepository) CreateUser(email, apiKey string, initialQuota int) (*models.User, error) {
+	if r.db == nil {
+		return nil, nil
+	}
 	user := models.User{
-		Email:    strings.ToLower(strings.TrimSpace(email)),
-		APIKey:   strings.TrimSpace(apiKey),
-		Quota:    initialQuota,
-		IsSystem: false,
+		Email:      strings.ToLower(strings.TrimSpace(email)),
+		APIKey:     strings.TrimSpace(apiKey),
+		Quota:      initialQuota,
+		DailyLimit: initialQuota,
+		IsSystem:   false,
+		IsGuest:    false,
 	}
 	if err := r.db.Create(&user).Error; err != nil {
 		return nil, err
@@ -162,12 +174,97 @@ func (r *PostgresRepository) CreateUser(email, apiKey string, initialQuota int) 
 	return &user, nil
 }
 
+// ResetUserDailyQuota atomically resets a user's quota to dailyLimit and updates last_reset_date.
+func (r *PostgresRepository) ResetUserDailyQuota(userID uint, dailyLimit int, todayDate string) error {
+	if r.db == nil {
+		return nil
+	}
+	return r.db.Model(&models.User{}).
+		Where("id = ?", userID).
+		Updates(map[string]interface{}{
+			"quota":           dailyLimit,
+			"last_reset_date": todayDate,
+		}).Error
+}
+
+// GetOrCreateGuestUser retrieves an existing guest user or creates a new guest account with defaultLimit tokens.
+func (r *PostgresRepository) GetOrCreateGuestUser(guestIdentifier string, todayDate string, defaultLimit int) (*models.User, error) {
+	if r.db == nil {
+		return nil, nil
+	}
+	cleanID := strings.ToLower(strings.TrimSpace(guestIdentifier))
+	if cleanID == "" {
+		cleanID = "anon"
+	}
+	// Sanitize to alphanumeric + dashes
+	var sb strings.Builder
+	for _, ch := range cleanID {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' {
+			sb.WriteRune(ch)
+		}
+	}
+	safeID := sb.String()
+	if safeID == "" {
+		safeID = "anon"
+	}
+	if len(safeID) > 40 {
+		safeID = safeID[:40]
+	}
+	guestEmail := fmt.Sprintf("guest-%s@guest.dispatch", safeID)
+
+	var user models.User
+	err := r.db.Where("email = ? AND is_guest = ?", guestEmail, true).First(&user).Error
+	if err == nil {
+		// Existing guest found: check if daily reset is needed
+		if user.LastResetDate != todayDate {
+			_ = r.db.Model(&user).Updates(map[string]interface{}{
+				"quota":           defaultLimit,
+				"daily_limit":     defaultLimit,
+				"last_reset_date": todayDate,
+			}).Error
+			user.Quota = defaultLimit
+			user.DailyLimit = defaultLimit
+			user.LastResetDate = todayDate
+		}
+		return &user, nil
+	}
+
+	// Create new guest user
+	newGuestKey := fmt.Sprintf("guest_%s_%d", safeID, time.Now().UnixNano())
+	newUser := models.User{
+		Email:         guestEmail,
+		APIKey:        newGuestKey,
+		Quota:         defaultLimit,
+		DailyLimit:    defaultLimit,
+		LastResetDate: todayDate,
+		IsGuest:       true,
+		IsSystem:      false,
+	}
+
+	if err := r.db.Create(&newUser).Error; err != nil {
+		// In case of unique constraint race condition, attempt fetch again
+		var retryUser models.User
+		if retryErr := r.db.Where("email = ?", guestEmail).First(&retryUser).Error; retryErr == nil {
+			return &retryUser, nil
+		}
+		return nil, err
+	}
+
+	return &newUser, nil
+}
+
 // RotateUserAPIKey updates a user's API key atomically.
 func (r *PostgresRepository) RotateUserAPIKey(userID uint, newAPIKey string) error {
+	if r.db == nil {
+		return nil
+	}
 	return r.db.Model(&models.User{}).Where("id = ?", userID).Update("api_key", strings.TrimSpace(newAPIKey)).Error
 }
 
 func (r *PostgresRepository) UpdateUserQuota(userID uint, newQuota int) error {
+	if r.db == nil {
+		return nil
+	}
 	return r.db.Model(&models.User{}).Where("id = ?", userID).Update("quota", newQuota).Error
 }
 
@@ -558,10 +655,12 @@ func (r *PostgresRepository) EnsureSystemUser(apiKey, email string, defaultQuota
 	}
 
 	user = models.User{
-		APIKey:   apiKey,
-		Email:    email,
-		Quota:    defaultQuota,
-		IsSystem: true,
+		APIKey:     apiKey,
+		Email:      email,
+		Quota:      defaultQuota,
+		DailyLimit: defaultQuota,
+		IsSystem:   true,
+		IsGuest:    false,
 	}
 	if err := r.db.Create(&user).Error; err != nil {
 		return nil, err

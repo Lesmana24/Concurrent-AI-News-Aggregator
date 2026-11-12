@@ -30,7 +30,16 @@ func APIKeyAuth(svc service.NewsService) gin.HandlerFunc {
 		}
 
 		if user.Quota <= 0 {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Quota exceeded"})
+			msg := "Quota exceeded"
+			if user.IsGuest {
+				msg = "Batas 5 token harian Anda telah habis. Kuota akan otomatis tereset kembali menjadi 5 pada pukul 00:00 WIB. Daftarkan email developer untuk kuota lebih tinggi."
+			}
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":       msg,
+				"quota":       0,
+				"daily_limit": user.DailyLimit,
+				"is_guest":    user.IsGuest,
+			})
 			c.Abort()
 			return
 		}

@@ -29,6 +29,8 @@ import (
 var (
 	ErrEmailAlreadyRegistered = errors.New("email is already registered")
 	ErrCannotRotateSystemKey  = errors.New("system account API keys cannot be rotated")
+	ErrGuestCannotRotateKey   = errors.New("guest accounts cannot rotate API keys. daily quota resets automatically at 00:00 WIB")
+	ErrCannotRotateDemoKey    = errors.New("default demo key cannot be rotated; please register your own developer key")
 	ErrInvalidEmail           = errors.New("invalid email address format")
 	ErrUserNotFound           = errors.New("user not found")
 )
@@ -37,6 +39,8 @@ type Repository interface {
 	GetUserByKey(apiKey string) (*models.User, error)
 	GetUserByEmail(email string) (*models.User, error)
 	CreateUser(email, apiKey string, initialQuota int) (*models.User, error)
+	ResetUserDailyQuota(userID uint, dailyLimit int, todayDate string) error
+	GetOrCreateGuestUser(guestIdentifier string, todayDate string, defaultLimit int) (*models.User, error)
 	RotateUserAPIKey(userID uint, newAPIKey string) error
 	UpdateUserQuota(userID uint, newQuota int) error
 	DeductUserQuota(userID uint, amount int) (bool, error)
@@ -60,6 +64,7 @@ type NewsService interface {
 	GetUser(apiKey string) (*models.User, error)
 	RegisterUser(ctx context.Context, email string) (*models.User, error)
 	RotateAPIKey(ctx context.Context, currentAPIKey string) (oldKey string, newKey string, user *models.User, err error)
+	GetOrCreateGuestSession(ctx context.Context, clientIdentifier string) (*models.User, error)
 	WithCache(c cache.CacheService) NewsService
 	WithEmbedding(emb ai.EmbeddingService) NewsService
 	WithHTTPClient(client *http.Client) NewsService
@@ -117,8 +122,34 @@ func (s *newsService) WithHTTPClient(client *http.Client) NewsService {
 	return s
 }
 
+func getWIBToday() string {
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		loc = time.FixedZone("WIB", 7*3600)
+	}
+	return time.Now().In(loc).Format("2006-01-02")
+}
+
 func (s *newsService) GetUser(apiKey string) (*models.User, error) {
-	return s.repo.GetUserByKey(apiKey)
+	user, err := s.repo.GetUserByKey(apiKey)
+	if err != nil || user == nil {
+		return user, err
+	}
+
+	// Lazy Daily Quota Reset (00:00 WIB)
+	if user.DailyLimit > 0 {
+		today := getWIBToday()
+		if user.LastResetDate != today {
+			_ = s.repo.ResetUserDailyQuota(user.ID, user.DailyLimit, today)
+			user.Quota = user.DailyLimit
+			user.LastResetDate = today
+			if s.cacheSvc != nil {
+				_ = s.cacheSvc.Delete(context.Background(), fmt.Sprintf("user:%s", apiKey))
+			}
+		}
+	}
+
+	return user, nil
 }
 
 func (s *newsService) SummarizeArticles(ctx context.Context, apiKey string, urls []string) ([]models.ArticleResponse, error) {
@@ -916,6 +947,14 @@ func (s *newsService) RotateAPIKey(ctx context.Context, currentAPIKey string) (s
 		return "", "", nil, ErrCannotRotateSystemKey
 	}
 
+	if user.IsGuest {
+		return "", "", nil, ErrGuestCannotRotateKey
+	}
+
+	if user.APIKey == "test-key-123" {
+		return "", "", nil, ErrCannotRotateDemoKey
+	}
+
 	newKey := generateUserAPIKey()
 	if err := s.repo.RotateUserAPIKey(user.ID, newKey); err != nil {
 		return "", "", nil, fmt.Errorf("failed to rotate user API key: %w", err)
@@ -929,4 +968,10 @@ func (s *newsService) RotateAPIKey(ctx context.Context, currentAPIKey string) (s
 	oldKey := user.APIKey
 	user.APIKey = newKey
 	return oldKey, newKey, user, nil
+}
+
+func (s *newsService) GetOrCreateGuestSession(ctx context.Context, clientIdentifier string) (*models.User, error) {
+	today := getWIBToday()
+	const defaultGuestDailyLimit = 5
+	return s.repo.GetOrCreateGuestUser(clientIdentifier, today, defaultGuestDailyLimit)
 }

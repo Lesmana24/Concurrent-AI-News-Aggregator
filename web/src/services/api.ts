@@ -1,6 +1,7 @@
 import type {
   Article,
   ClusterDetailResponse,
+  GuestSessionResponse,
   NewsCompareResponse,
   RegisterUserResponse,
   RotateAPIKeyResponse,
@@ -15,6 +16,19 @@ export const DEFAULT_DEMO_KEY = 'test-key-123'
 export const api = {
   async getHealth() {
     const res = await fetch(`${API_BASE}/health`)
+    return res.json()
+  },
+
+  async initGuestSession(deviceId?: string): Promise<GuestSessionResponse> {
+    const res = await fetch(`${API_BASE}/auth/guest-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: deviceId || '' }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || `Failed to create guest session (${res.status})`)
+    }
     return res.json()
   },
 

@@ -49,6 +49,9 @@ func (m *mockAuthNewsService) RegisterUser(ctx context.Context, email string) (*
 func (m *mockAuthNewsService) RotateAPIKey(ctx context.Context, currentAPIKey string) (string, string, *models.User, error) {
 	return "", "", nil, nil
 }
+func (m *mockAuthNewsService) GetOrCreateGuestSession(ctx context.Context, clientIdentifier string) (*models.User, error) {
+	return nil, nil
+}
 func (m *mockAuthNewsService) WithCache(c cache.CacheService) service.NewsService {
 	return m
 }
@@ -163,5 +166,30 @@ func TestAPIKeyAuth_ValidUser_Returns200AndSetsContext(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "developer@example.com")
+}
+
+func TestAPIKeyAuth_GuestQuotaExceeded_ReturnsIndonesianNotice(t *testing.T) {
+	mockSvc := &mockAuthNewsService{
+		getUserFunc: func(apiKey string) (*models.User, error) {
+			return &models.User{
+				APIKey:     apiKey,
+				Email:      "guest-anon@guest.dispatch",
+				Quota:      0,
+				DailyLimit: 5,
+				IsGuest:    true,
+				IsSystem:   false,
+			}, nil
+		},
+	}
+	router := setupAuthRouter(mockSvc)
+
+	req, _ := http.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("X-API-KEY", "guest-exhausted-key")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "Batas 5 token harian Anda telah habis")
+	assert.Contains(t, w.Body.String(), "00:00 WIB")
 }
 

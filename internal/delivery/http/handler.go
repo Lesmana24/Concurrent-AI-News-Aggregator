@@ -733,11 +733,53 @@ func (h *NewsHandler) GetMe(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":      user.ID,
-		"email":   user.Email,
-		"quota":   user.Quota,
-		"status":  "active",
-		"api_key": apiKey,
+		"id":          user.ID,
+		"email":       user.Email,
+		"quota":       user.Quota,
+		"daily_limit": user.DailyLimit,
+		"is_guest":    user.IsGuest,
+		"status":      "active",
+		"api_key":     apiKey,
+	})
+}
+
+// GuestSession godoc
+// @Summary      Create or retrieve guest session
+// @Description  Provisions an anonymous guest user session with 5 daily tokens that reset every day at 00:00 WIB.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        request body models.GuestSessionRequest false "Guest Device Identifier"
+// @Success      200 {object} map[string]interface{} "Guest session created or retrieved"
+// @Failure      500 {object} map[string]string "Internal server error"
+// @Router       /api/v1/auth/guest-session [post]
+func (h *NewsHandler) GuestSession(c *gin.Context) {
+	var req models.GuestSessionRequest
+	_ = c.ShouldBindJSON(&req)
+
+	identifier := strings.TrimSpace(req.DeviceID)
+	if identifier == "" {
+		identifier = c.ClientIP()
+	}
+
+	user, err := h.service.GetOrCreateGuestSession(c.Request.Context(), identifier)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": fmt.Sprintf("Failed to initialize guest session: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data": models.GuestSessionResponse{
+			APIKey:     user.APIKey,
+			Quota:      user.Quota,
+			DailyLimit: user.DailyLimit,
+			IsGuest:    true,
+			ResetAt:    "00:00 WIB",
+		},
 	})
 }
 
@@ -791,11 +833,12 @@ func (h *NewsHandler) RegisterUser(c *gin.Context) {
 		"status":  "success",
 		"message": "User registered successfully. Save your API key securely.",
 		"data": models.RegisterUserResponse{
-			ID:        user.ID,
-			Email:     user.Email,
-			APIKey:    user.APIKey,
-			Quota:     user.Quota,
-			CreatedAt: user.CreatedAt,
+			ID:         user.ID,
+			Email:      user.Email,
+			APIKey:     user.APIKey,
+			Quota:      user.Quota,
+			DailyLimit: user.DailyLimit,
+			CreatedAt:  user.CreatedAt,
 		},
 	})
 }
@@ -827,6 +870,20 @@ func (h *NewsHandler) RotateAPIKey(c *gin.Context) {
 			})
 			return
 		}
+		if errors.Is(err, service.ErrGuestCannotRotateKey) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"status":  "error",
+				"message": "Akun tamu tidak dapat merotasi API key. Kuota harian (5 token) akan tereset otomatis setiap pukul 00:00 WIB.",
+			})
+			return
+		}
+		if errors.Is(err, service.ErrCannotRotateDemoKey) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"status":  "error",
+				"message": "Key demo bawaan tidak dapat dirotasi. Silakan daftarkan akun developer Anda sendiri.",
+			})
+			return
+		}
 		if errors.Is(err, service.ErrUserNotFound) {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"status":  "error",
@@ -845,12 +902,13 @@ func (h *NewsHandler) RotateAPIKey(c *gin.Context) {
 		"status":  "success",
 		"message": "API key rotated successfully. The previous key is immediately revoked.",
 		"data": models.RotateAPIKeyResponse{
-			ID:        user.ID,
-			Email:     user.Email,
-			OldAPIKey: oldKey,
-			NewAPIKey: newKey,
-			Quota:     user.Quota,
-			RotatedAt: time.Now(),
+			ID:         user.ID,
+			Email:      user.Email,
+			OldAPIKey:  oldKey,
+			NewAPIKey:  newKey,
+			Quota:      user.Quota,
+			DailyLimit: user.DailyLimit,
+			RotatedAt:  time.Now(),
 		},
 	})
 }

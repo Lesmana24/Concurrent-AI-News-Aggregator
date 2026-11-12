@@ -9,10 +9,13 @@ import (
 
 type User struct {
 	gorm.Model
-	APIKey   string `gorm:"uniqueIndex;not null" json:"api_key"`
-	Quota    int    `gorm:"default:100" json:"quota"`
-	Email    string `gorm:"uniqueIndex;not null" json:"email"`
-	IsSystem bool   `gorm:"default:false" json:"is_system"`
+	APIKey        string `gorm:"uniqueIndex;not null" json:"api_key"`
+	Quota         int    `gorm:"default:5" json:"quota"`
+	DailyLimit    int    `gorm:"default:5" json:"daily_limit"`
+	LastResetDate string `gorm:"type:varchar(10);default:''" json:"last_reset_date"`
+	Email         string `gorm:"uniqueIndex;not null" json:"email"`
+	IsSystem      bool   `gorm:"default:false" json:"is_system"`
+	IsGuest       bool   `gorm:"default:false;index" json:"is_guest"`
 }
 
 type Article struct {
@@ -42,8 +45,23 @@ type UserRequest struct {
 }
 
 type UserResponse struct {
-	APIKey string `json:"api_key"`
-	Quota  int    `json:"quota"`
+	APIKey      string `json:"api_key"`
+	Quota       int    `json:"quota"`
+	DailyLimit  int    `json:"daily_limit"`
+	IsGuest     bool   `json:"is_guest"`
+	NextResetAt string `json:"next_reset_at,omitempty"`
+}
+
+type GuestSessionRequest struct {
+	DeviceID string `json:"device_id"`
+}
+
+type GuestSessionResponse struct {
+	APIKey     string `json:"api_key"`
+	Quota      int    `json:"quota"`
+	DailyLimit int    `json:"daily_limit"`
+	IsGuest    bool   `json:"is_guest"`
+	ResetAt    string `json:"reset_at"`
 }
 
 type RegisterUserRequest struct {
@@ -51,20 +69,22 @@ type RegisterUserRequest struct {
 }
 
 type RegisterUserResponse struct {
-	ID        uint      `json:"id"`
-	Email     string    `json:"email"`
-	APIKey    string    `json:"api_key"`
-	Quota     int       `json:"quota"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         uint      `json:"id"`
+	Email      string    `json:"email"`
+	APIKey     string    `json:"api_key"`
+	Quota      int       `json:"quota"`
+	DailyLimit int       `json:"daily_limit"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type RotateAPIKeyResponse struct {
-	ID        uint      `json:"id"`
-	Email     string    `json:"email"`
-	OldAPIKey string    `json:"old_api_key"`
-	NewAPIKey string    `json:"new_api_key"`
-	Quota     int       `json:"quota"`
-	RotatedAt time.Time `json:"rotated_at"`
+	ID         uint      `json:"id"`
+	Email      string    `json:"email"`
+	OldAPIKey  string    `json:"old_api_key"`
+	NewAPIKey  string    `json:"new_api_key"`
+	Quota      int       `json:"quota"`
+	DailyLimit int       `json:"daily_limit"`
+	RotatedAt  time.Time `json:"rotated_at"`
 }
 
 type ArticleResponse struct {

@@ -92,6 +92,10 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   }
 
   const handleRotate = async () => {
+    if (isGuest) {
+      setRotateMessage({ type: 'error', text: 'Sesi Guest tidak diizinkan merotasi key demi keamanan kuota harian.' })
+      return
+    }
     setIsRotating(true)
     setRotateMessage(null)
     try {
@@ -136,9 +140,10 @@ data = response.json()
 print("Total Clusters:", data.get("total_clusters"))`,
   }
 
-  const quotaValue = user?.quota ?? 50
-  const maxQuota = 1000
-  const quotaPercent = Math.min(Math.round((quotaValue / maxQuota) * 100), 100)
+  const isGuest = Boolean(user?.is_guest ?? (!apiKey || apiKey.startsWith('guest_') || apiKey === DEFAULT_DEMO_KEY))
+  const maxQuota = user?.daily_limit ?? (isGuest ? 5 : (user ? 100 : 5))
+  const quotaValue = user ? user.quota : (isGuest ? 5 : 100)
+  const quotaPercent = Math.min(Math.round((quotaValue / (maxQuota || 1)) * 100), 100)
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
@@ -157,9 +162,15 @@ print("Total Clusters:", data.get("total_clusters"))`,
                 <h3 className="font-editorial text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100">
                   Developer API & Quota Meter
                 </h3>
-                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3" /> Enterprise Tier
-                </span>
+                {isGuest ? (
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-semibold flex items-center gap-1">
+                    <Zap className="w-3 h-3" /> Guest Pass (5 Req/Hari)
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" /> Developer Tier
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-400 font-sans">
                 Akses terintegrasi ke engine kecerdasan berita, radar klastering tren, dan sintesis liputan
@@ -180,7 +191,7 @@ print("Total Clusters:", data.get("total_clusters"))`,
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
             <div className="flex items-center justify-between text-xs font-mono">
               <span className="text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5 text-amber-500" /> Daily Reasoning & Ingest Quota
+                <Zap className="w-3.5 h-3.5 text-amber-500" /> {isGuest ? 'Guest Daily Token Quota' : 'Daily Reasoning & Ingest Quota'}
               </span>
               <span className="text-amber-700 dark:text-amber-400 font-bold">
                 {quotaValue} / {maxQuota} Req
@@ -194,8 +205,8 @@ print("Total Clusters:", data.get("total_clusters"))`,
               />
             </div>
             <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
-              <span>Status: {user?.status || 'Active Sandbox'}</span>
-              <span>Rate Limit: 60 RPM</span>
+              <span>Status: {isGuest ? 'Guest Sandbox (Auto Reset 00:00 WIB)' : (user?.status || 'Active Sandbox')}</span>
+              <span>Rate Limit: {isGuest ? '20 RPM' : '60 RPM'}</span>
             </div>
           </div>
 
@@ -248,9 +259,11 @@ print("Total Clusters:", data.get("total_clusters"))`,
             </div>
             <div className="flex items-center justify-between pt-1">
               <p className="text-[11px] text-slate-500 dark:text-slate-400 font-sans">
-                Gunakan key default <code className="text-slate-700 dark:text-slate-300 font-mono">test-key-123</code> untuk pengujian lokal.
+                {isGuest
+                  ? 'Sesi Guest Otomatis: Batas 5 token per hari, tereset setiap 00:00 WIB.'
+                  : 'Gunakan key unik Anda untuk mengakses endpoint API.'}
               </p>
-              {!showRotateConfirm && (
+              {!isGuest && !showRotateConfirm && (
                 <button
                   type="button"
                   onClick={() => {
@@ -263,6 +276,19 @@ print("Total Clusters:", data.get("total_clusters"))`,
                 </button>
               )}
             </div>
+
+            {/* Guest Anti-Abuse Notification */}
+            {isGuest && (
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-800 dark:text-amber-300 space-y-1.5 mt-2">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>Proteksi Kuota Tamu & Anti-Manipulasi:</span>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 font-sans leading-relaxed">
+                  Setiap pengunjung website mendapatkan <strong>5 token harian</strong> yang otomatis kembali menjadi 5 pada pukul <strong>00:00 WIB</strong>. Rotasi / pencabutan key dinonaktifkan pada sesi tamu untuk mencegah bypass kuota. Untuk batas 100 token harian dan kemampuan rotasi key, daftarkan email Anda di bawah.
+                </p>
+              </div>
+            )}
 
             {/* Rotate Confirmation dialog/banner */}
             {showRotateConfirm && (

@@ -42,6 +42,15 @@ export const SystemTelemetry: React.FC<SystemTelemetryProps> = ({ apiKey, user, 
     }
   }
 
+  const isGuest = Boolean(user?.is_guest ?? (!apiKey || apiKey.startsWith('guest_') || apiKey === 'test-key-123'))
+  const dailyLimit = user?.daily_limit ?? (isGuest ? 5 : (user ? 50 : 5))
+  const currentQuota = user ? user.quota : dailyLimit
+  const quotaPercent = Math.min(100, Math.round((currentQuota / (dailyLimit || 1)) * 100))
+
+  const displayKey = apiKey && apiKey !== 'undefined' && apiKey !== 'null'
+    ? (isGuest ? `${apiKey.slice(0, 16)}... (Guest Pass)` : apiKey)
+    : 'Guest Pass (Auto Init)'
+
   return (
     <div className="space-y-8 sm:space-y-10">
       {/* Header */}
@@ -63,24 +72,24 @@ export const SystemTelemetry: React.FC<SystemTelemetryProps> = ({ apiKey, user, 
         <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 space-y-3.5 shadow-sm dark:shadow-xl transition-colors">
           <div className="flex items-center justify-between">
             <span className="text-xs font-mono font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Sisa Kuota Token
+              {isGuest ? 'Sisa Kuota Tamu (Harian)' : 'Sisa Kuota Token'}
             </span>
             <Database className="w-5 h-5 text-amber-500" />
           </div>
           <div className="flex items-baseline gap-2">
             <span className="font-editorial text-3xl sm:text-4xl font-bold text-amber-700 dark:text-amber-400 font-mono">
-              {user ? user.quota : 50}
+              {currentQuota}
             </span>
-            <span className="text-xs font-mono text-slate-500 dark:text-slate-400">/ 50 requests</span>
+            <span className="text-xs font-mono text-slate-500 dark:text-slate-400">/ {dailyLimit} requests</span>
           </div>
           <div className="w-full bg-slate-100 dark:bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-200 dark:border-slate-800">
             <div
               className="bg-amber-500 h-full rounded-full transition-all"
-              style={{ width: `${Math.min(100, ((user ? user.quota : 50) / 50) * 100)}%` }}
+              style={{ width: `${quotaPercent}%` }}
             />
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 font-mono truncate">
-            Active Key: <code className="text-amber-700 dark:text-amber-400 font-bold">{apiKey}</code>
+            Active Key: <code className="text-amber-700 dark:text-amber-400 font-bold">{displayKey}</code>
           </p>
         </div>
 

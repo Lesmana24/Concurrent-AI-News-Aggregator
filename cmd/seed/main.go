@@ -59,9 +59,11 @@ func main() {
 
 	if result.Error != nil {
 		newUser := models.User{
-			Email:  "developer@example.com",
-			APIKey: testKey,
-			Quota:  50,
+			Email:      "developer@example.com",
+			APIKey:     testKey,
+			Quota:      50,
+			DailyLimit: 50,
+			IsGuest:    false,
 		}
 		if err := db.Create(&newUser).Error; err != nil {
 			log.Fatalf("Failed to create seed user: %v", err)
@@ -69,6 +71,8 @@ func main() {
 		fmt.Printf("Seed user created successfully!\n  - ID: %d\n  - Email: %s\n  - APIKey: %s\n  - Quota: %d\n", newUser.ID, newUser.Email, newUser.APIKey, newUser.Quota)
 	} else {
 		existing.Quota = 50
+		existing.DailyLimit = 50
+		existing.IsGuest = false
 		db.Save(&existing)
 		fmt.Printf("Seed user already exists (Quota refreshed to 50):\n  - ID: %d\n  - Email: %s\n  - APIKey: %s\n  - Quota: %d\n", existing.ID, existing.Email, existing.APIKey, existing.Quota)
 	}

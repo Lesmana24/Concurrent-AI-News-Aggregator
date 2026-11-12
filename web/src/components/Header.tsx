@@ -144,12 +144,14 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Quota Meter Button (Min 44px Touch Target) */}
         <button
           onClick={onOpenApiKeyModal}
-          className="flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 hover:bg-slate-200/80 dark:hover:bg-slate-850 active:scale-98 border border-slate-200 dark:border-slate-700/80 hover:border-amber-500/50 transition text-xs font-mono text-slate-700 dark:text-slate-200 min-h-[40px] touch-manipulation shadow-xs"
+          className="flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 hover:bg-slate-200/80 dark:hover:bg-slate-850 active:scale-98 border border-slate-200 dark:border-slate-700/80 hover:border-amber-500/50 transition text-xs font-mono text-slate-700 dark:text-slate-200 min-h-[40px] touch-manipulation shadow-xs cursor-pointer"
           title="Klik untuk konfigurasi API Key dan Quota"
         >
           <Key className="w-3.5 h-3.5 text-amber-500 shrink-0" />
           <span className="hidden xs:inline text-slate-500 dark:text-slate-400">Quota:</span>
-          <span className="text-amber-700 dark:text-amber-400 font-bold">{user ? user.quota : '50'}</span>
+          <span className="text-amber-700 dark:text-amber-400 font-bold">
+            {user ? `${user.quota} / ${user.daily_limit ?? (user.is_guest ? 5 : 50)}` : '5 / 5'}
+          </span>
         </button>
       </div>
     </header>

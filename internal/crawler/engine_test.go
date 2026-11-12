@@ -79,6 +79,10 @@ func (m *mockNewsService) RotateAPIKey(ctx context.Context, currentAPIKey string
 	return "", "", nil, nil
 }
 
+func (m *mockNewsService) GetOrCreateGuestSession(ctx context.Context, clientIdentifier string) (*models.User, error) {
+	return nil, nil
+}
+
 func (m *mockNewsService) WithCache(c cache.CacheService) service.NewsService {
 	return m
 }

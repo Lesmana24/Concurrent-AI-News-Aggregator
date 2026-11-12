@@ -243,6 +243,7 @@ func main() {
 	{
 		api.GET("/health", handler.Health)
 		api.POST("/auth/register", handler.RegisterUser)
+		api.POST("/auth/guest-session", handler.GuestSession)
 		api.GET("/news/search", handler.SemanticSearch)
 		api.GET("/news/trending", handler.GetTrending)
 		api.GET("/news/clusters/:id", handler.GetClusterDetail)

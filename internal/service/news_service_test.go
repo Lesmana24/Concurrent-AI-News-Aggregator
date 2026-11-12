@@ -46,6 +46,19 @@ func (m *MockRepository) CreateUser(email, apiKey string, initialQuota int) (*mo
 	return args.Get(0).(*models.User), args.Error(1)
 }
 
+func (m *MockRepository) ResetUserDailyQuota(userID uint, dailyLimit int, todayDate string) error {
+	args := m.Called(userID, dailyLimit, todayDate)
+	return args.Error(0)
+}
+
+func (m *MockRepository) GetOrCreateGuestUser(guestIdentifier string, todayDate string, defaultLimit int) (*models.User, error) {
+	args := m.Called(guestIdentifier, todayDate, defaultLimit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.User), args.Error(1)
+}
+
 func (m *MockRepository) RotateUserAPIKey(userID uint, newAPIKey string) error {
 	args := m.Called(userID, newAPIKey)
 	return args.Error(0)
@@ -810,4 +823,86 @@ func TestRotateAPIKey_InvalidCurrentKey_ReturnsError(t *testing.T) {
 
 	_, _, _, err := svc.RotateAPIKey(context.Background(), "non_existent_key")
 	assert.ErrorIs(t, err, ErrUserNotFound)
+}
+
+func TestRotateAPIKey_GuestUser_Blocked(t *testing.T) {
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo)
+
+	guestUser := &models.User{
+		Email:      "guest-anon@guest.dispatch",
+		APIKey:     "guest_12345",
+		Quota:      3,
+		DailyLimit: 5,
+		IsGuest:    true,
+	}
+	guestUser.ID = 10
+
+	mockRepo.On("GetUserByKey", "guest_12345").Return(guestUser, nil)
+
+	_, _, _, err := svc.RotateAPIKey(context.Background(), "guest_12345")
+	assert.ErrorIs(t, err, ErrGuestCannotRotateKey)
+}
+
+func TestRotateAPIKey_DemoKey_Blocked(t *testing.T) {
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo)
+
+	demoUser := &models.User{
+		Email:      "developer@example.com",
+		APIKey:     "test-key-123",
+		Quota:      50,
+		DailyLimit: 50,
+		IsGuest:    false,
+	}
+	demoUser.ID = 1
+
+	mockRepo.On("GetUserByKey", "test-key-123").Return(demoUser, nil)
+
+	_, _, _, err := svc.RotateAPIKey(context.Background(), "test-key-123")
+	assert.ErrorIs(t, err, ErrCannotRotateDemoKey)
+}
+
+func TestGetUser_LazyDailyReset(t *testing.T) {
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo)
+
+	yesterdayUser := &models.User{
+		Email:         "guest-123@guest.dispatch",
+		APIKey:        "guest_key_abc",
+		Quota:         0,
+		DailyLimit:    5,
+		LastResetDate: "2020-01-01",
+		IsGuest:       true,
+	}
+	yesterdayUser.ID = 5
+
+	mockRepo.On("GetUserByKey", "guest_key_abc").Return(yesterdayUser, nil)
+	mockRepo.On("ResetUserDailyQuota", uint(5), 5, mock.AnythingOfType("string")).Return(nil)
+
+	user, err := svc.GetUser("guest_key_abc")
+	assert.NoError(t, err)
+	assert.NotNil(t, user)
+	assert.Equal(t, 5, user.Quota, "quota should be reset to daily limit on new day")
+	assert.NotEqual(t, "2020-01-01", user.LastResetDate)
+}
+
+func TestGetOrCreateGuestSession(t *testing.T) {
+	mockRepo := new(MockRepository)
+	svc := NewNewsService(mockRepo)
+
+	guestUser := &models.User{
+		Email:      "guest-dev123@guest.dispatch",
+		APIKey:     "guest_dev123_key",
+		Quota:      5,
+		DailyLimit: 5,
+		IsGuest:    true,
+	}
+	mockRepo.On("GetOrCreateGuestUser", "dev123", mock.AnythingOfType("string"), 5).Return(guestUser, nil)
+
+	user, err := svc.GetOrCreateGuestSession(context.Background(), "dev123")
+	assert.NoError(t, err)
+	assert.NotNil(t, user)
+	assert.True(t, user.IsGuest)
+	assert.Equal(t, 5, user.DailyLimit)
 }

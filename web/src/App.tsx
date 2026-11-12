@@ -27,7 +27,8 @@ import { api, DEFAULT_DEMO_KEY } from './services/api'
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('trending')
   const [apiKey, setApiKey] = useState<string>(() => {
-    return localStorage.getItem('the_dispatch_api_key') || DEFAULT_DEMO_KEY
+    const stored = localStorage.getItem('the_dispatch_api_key')
+    return stored && stored !== DEFAULT_DEMO_KEY ? stored : ''
   })
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
   const [user, setUser] = useState<UserMe | null>(null)
@@ -46,12 +47,39 @@ export const App: React.FC = () => {
   // Watchlist State (persistent via localStorage)
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>(() => getStoredWatchlist())
 
+  const getDeviceId = (): string => {
+    let devId = localStorage.getItem('the_dispatch_device_id')
+    if (!devId) {
+      devId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'guest-' + Date.now()
+      localStorage.setItem('the_dispatch_device_id', devId)
+    }
+    return devId
+  }
+
   const loadUserData = async (key = apiKey) => {
+    if (!key) return
     try {
       const data = await api.getMe(key)
       setUser(data)
     } catch {
       setUser(null)
+    }
+  }
+
+  const ensureGuestApiKey = async () => {
+    try {
+      const devId = getDeviceId()
+      const guest = await api.initGuestSession(devId)
+      if (guest?.data?.api_key) {
+        setApiKey(guest.data.api_key)
+        localStorage.setItem('the_dispatch_api_key', guest.data.api_key)
+        loadUserData(guest.data.api_key)
+        return
+      }
+    } catch (err) {
+      console.warn('Guest session fallback to demo key:', err)
+      setApiKey(DEFAULT_DEMO_KEY)
+      loadUserData(DEFAULT_DEMO_KEY)
     }
   }
 
@@ -65,8 +93,12 @@ export const App: React.FC = () => {
   }
 
   useEffect(() => {
-    localStorage.setItem('the_dispatch_api_key', apiKey)
-    loadUserData(apiKey)
+    if (!apiKey) {
+      ensureGuestApiKey()
+    } else {
+      localStorage.setItem('the_dispatch_api_key', apiKey)
+      loadUserData(apiKey)
+    }
     checkHealth()
 
     const interval = setInterval(checkHealth, 30000)
