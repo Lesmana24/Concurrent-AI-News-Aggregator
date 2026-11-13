@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"news-aggregator/internal/ai"
@@ -508,6 +509,98 @@ func TestGuestSession_Success(t *testing.T) {
 	assert.Equal(t, "guest_mock_key", data["api_key"])
 	assert.Equal(t, float64(5), data["quota"])
 	assert.Equal(t, true, data["is_guest"])
+}
+
+func TestGuestSession_InvalidDeviceID_Validation(t *testing.T) {
+	mockSvc := &mockNewsService{}
+	router := setupTestRouter(mockSvc)
+
+	testCases := []struct {
+		name     string
+		deviceID string
+	}{
+		{"too_short", "abc"},
+		{"too_long", "a-very-long-device-id-that-exceeds-sixty-four-characters-limit-1234567890-abcdef"},
+		{"illegal_chars_html", "<script>alert(1)</script>"},
+		{"illegal_chars_space", "device uuid 123"},
+		{"illegal_chars_symbols", "device!@#$%^&*()"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := fmt.Sprintf(`{"device_id":%q}`, tc.deviceID)
+			req, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/guest-session", strings.NewReader(payload))
+			req.Header.Set("Content-Type", "application/json")
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			var resp map[string]interface{}
+			err := json.Unmarshal(w.Body.Bytes(), &resp)
+			assert.NoError(t, err)
+			assert.Equal(t, "error", resp["status"])
+			assert.Contains(t, resp["message"], "Invalid device_id")
+		})
+	}
+}
+
+func TestGuestSession_EmptyDeviceID_FallbackToClientIP(t *testing.T) {
+	mockSvc := &mockNewsService{}
+	router := setupTestRouter(mockSvc)
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/guest-session", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "192.168.1.100:12345"
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, "success", resp["status"])
+}
+
+func TestGuestSession_RateLimitPerIP_Returns429(t *testing.T) {
+	mockSvc := &mockNewsService{}
+	router := setupTestRouter(mockSvc)
+
+	// Set low limit for testing
+	t.Setenv("GUEST_SESSION_RATE_LIMIT_PER_HOUR", "3")
+
+	clientIP := "10.0.0.99"
+
+	for i := 1; i <= 3; i++ {
+		payload := fmt.Sprintf(`{"device_id":"valid-device-%d"}`, i)
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/guest-session", strings.NewReader(payload))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", clientIP)
+		req.RemoteAddr = clientIP + ":54321"
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	}
+
+	// 4th request from same IP should be blocked by rate limit
+	payload := `{"device_id":"valid-device-4"}`
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/guest-session", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-For", clientIP)
+	req.RemoteAddr = clientIP + ":54321"
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
+	assert.Equal(t, "3600", w.Header().Get("Retry-After"))
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, "error", resp["status"])
+	assert.Contains(t, resp["message"], "Terlalu banyak permintaan sesi tamu")
 }
 
 func TestRotateAPIKey_MissingAuth_Returns401(t *testing.T) {

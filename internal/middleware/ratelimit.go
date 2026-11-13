@@ -261,12 +261,22 @@ func RateLimit(cacheSvc cache.CacheService, rpm int) gin.HandlerFunc {
 	}
 }
 
-func checkRateLimit(ctx context.Context, cacheSvc cache.CacheService, rawKey string, limit int, window time.Duration) (bool, int, error) {
+// CheckRateLimit checks whether a given key is allowed under the rate limit (limit requests per window).
+// It supports Redis when available and falls back to bounded in-memory sliding-window limiter.
+func CheckRateLimit(ctx context.Context, cacheSvc cache.CacheService, namespace, rawKey string, limit int, window time.Duration) (bool, int, error) {
 	key := sanitizeClientKey(rawKey)
+	if namespace == "" {
+		namespace = "global"
+	}
 
 	// 1. If Redis is available, execute single atomic round-trip Lua script (INCR + EXPIRE)
 	if cacheSvc != nil && cacheSvc.IsAvailable() {
-		redisKey := fmt.Sprintf("ratelimit:%s:%d", key, time.Now().Unix()/60)
+		windowSec := int64(window.Seconds())
+		if windowSec <= 0 {
+			windowSec = 60
+		}
+		bucket := time.Now().Unix() / windowSec
+		redisKey := fmt.Sprintf("ratelimit:%s:%s:%d", namespace, key, bucket)
 		count, err := cacheSvc.Incr(ctx, redisKey, window+5*time.Second)
 		if err == nil {
 			if count > int64(limit) {
@@ -282,6 +292,11 @@ func checkRateLimit(ctx context.Context, cacheSvc cache.CacheService, rawKey str
 	}
 
 	// 2. In-memory fallback (sharded, bounded, auto-cleaning sliding window)
-	allowed, remaining := defaultMemoryLimiter.Allow(key, limit, window, time.Now())
+	memKey := fmt.Sprintf("%s:%s", namespace, key)
+	allowed, remaining := defaultMemoryLimiter.Allow(memKey, limit, window, time.Now())
 	return allowed, remaining, nil
+}
+
+func checkRateLimit(ctx context.Context, cacheSvc cache.CacheService, rawKey string, limit int, window time.Duration) (bool, int, error) {
+	return CheckRateLimit(ctx, cacheSvc, "rpm", rawKey, limit, window)
 }

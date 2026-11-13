@@ -9,10 +9,12 @@ import (
 	"news-aggregator/internal/cache"
 	"news-aggregator/internal/clustering"
 	"news-aggregator/internal/crawler"
+	"news-aggregator/internal/middleware"
 	"news-aggregator/internal/models"
 	"news-aggregator/internal/repository"
 	"news-aggregator/internal/scheduler"
 	"news-aggregator/internal/service"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -751,15 +753,61 @@ func (h *NewsHandler) GetMe(c *gin.Context) {
 // @Produce      json
 // @Param        request body models.GuestSessionRequest false "Guest Device Identifier"
 // @Success      200 {object} map[string]interface{} "Guest session created or retrieved"
+// @Failure      400 {object} map[string]string "Invalid request or malformed device_id"
+// @Failure      429 {object} map[string]string "Too many guest session creations from this IP"
 // @Failure      500 {object} map[string]string "Internal server error"
 // @Router       /api/v1/auth/guest-session [post]
 func (h *NewsHandler) GuestSession(c *gin.Context) {
 	var req models.GuestSessionRequest
-	_ = c.ShouldBindJSON(&req)
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"status":  "error",
+				"message": fmt.Sprintf("Format request tidak valid: %v", err),
+			})
+			return
+		}
+	}
 
-	identifier := strings.TrimSpace(req.DeviceID)
+	rawDeviceID := strings.TrimSpace(req.DeviceID)
+	if rawDeviceID != "" {
+		if len(rawDeviceID) < 8 || len(rawDeviceID) > 64 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"status":  "error",
+				"message": "Invalid device_id: length must be between 8 and 64 characters",
+			})
+			return
+		}
+		if !isValidDeviceID(rawDeviceID) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"status":  "error",
+				"message": "Invalid device_id: only alphanumeric characters, dashes, and underscores are allowed",
+			})
+			return
+		}
+	}
+
+	clientIP := c.ClientIP()
+
+	// Rate limit: max guest session creations per IP per hour (default: 10)
+	limitPerHour := 10
+	if envLimit, err := strconv.Atoi(os.Getenv("GUEST_SESSION_RATE_LIMIT_PER_HOUR")); err == nil && envLimit > 0 {
+		limitPerHour = envLimit
+	}
+
+	allowed, _, err := middleware.CheckRateLimit(c.Request.Context(), h.cacheSvc, "guest_session", clientIP, limitPerHour, time.Hour)
+	if err == nil && !allowed {
+		c.Header("Retry-After", "3600")
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"status":  "error",
+			"message": "Terlalu banyak permintaan sesi tamu dari IP ini. Silakan coba lagi nanti atau gunakan akun developer.",
+		})
+		return
+	}
+
+	identifier := rawDeviceID
 	if identifier == "" {
-		identifier = c.ClientIP()
+		identifier = clientIP
 	}
 
 	user, err := h.service.GetOrCreateGuestSession(c.Request.Context(), identifier)
@@ -781,6 +829,16 @@ func (h *NewsHandler) GuestSession(c *gin.Context) {
 			ResetAt:    "00:00 WIB",
 		},
 	})
+}
+
+func isValidDeviceID(s string) bool {
+	for _, ch := range s {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // RegisterUser godoc
