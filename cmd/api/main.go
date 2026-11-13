@@ -216,6 +216,14 @@ func main() {
 		go telegramBot.Start(appCtx)
 	}
 
+	// Initialize Database Maintenance Engine (Auto-purge inactive guest accounts > 7 days)
+	purgeDays, _ := strconv.Atoi(os.Getenv("GUEST_PURGE_INACTIVE_DAYS"))
+	if purgeDays <= 0 {
+		purgeDays = 7
+	}
+	maintenanceEngine := scheduler.NewMaintenanceEngine(repo, purgeDays, 24*time.Hour)
+	go maintenanceEngine.Start(appCtx)
+
 	// Initialize Handler with DB, Redis, Crawler, Scheduler, Clustering, and Repo references
 	handler := deliveryHttp.NewNewsHandler(svc, db).
 		WithCache(redisCache).

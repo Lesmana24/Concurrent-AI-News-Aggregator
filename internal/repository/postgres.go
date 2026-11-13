@@ -253,6 +253,26 @@ func (r *PostgresRepository) GetOrCreateGuestUser(guestIdentifier string, todayD
 	return &newUser, nil
 }
 
+// PurgeInactiveGuestUsers permanently removes guest accounts that have had no activity for olderThanDays (default: 7 days).
+// Non-guest (developer/system) accounts are strictly preserved.
+func (r *PostgresRepository) PurgeInactiveGuestUsers(ctx context.Context, olderThanDays int) (int64, error) {
+	if r.db == nil {
+		return 0, nil
+	}
+	if olderThanDays <= 0 {
+		olderThanDays = 7
+	}
+	cutoff := time.Now().AddDate(0, 0, -olderThanDays)
+
+	res := r.db.WithContext(ctx).Unscoped().
+		Where("is_guest = ? AND updated_at < ?", true, cutoff).
+		Delete(&models.User{})
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return res.RowsAffected, nil
+}
+
 // RotateUserAPIKey updates a user's API key atomically.
 func (r *PostgresRepository) RotateUserAPIKey(userID uint, newAPIKey string) error {
 	if r.db == nil {

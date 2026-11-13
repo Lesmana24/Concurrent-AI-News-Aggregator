@@ -185,6 +185,15 @@ func TestRepository_NilDB_SafeOperations(t *testing.T) {
 	if recent != nil {
 		t.Errorf("expected GetRecentArticles to return nil articles on nil db, got %v", recent)
 	}
+
+	// PurgeInactiveGuestUsers with nil db
+	deleted, err := repo.PurgeInactiveGuestUsers(context.Background(), 7)
+	if err != nil {
+		t.Errorf("expected PurgeInactiveGuestUsers to return nil error on nil db, got %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("expected PurgeInactiveGuestUsers to return 0 on nil db, got %d", deleted)
+	}
 }
 
 func TestArticleModel_TimestampIndexes(t *testing.T) {
