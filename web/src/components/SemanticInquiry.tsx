@@ -51,9 +51,10 @@ function parseCitationInfo(url: string) {
 
 interface SemanticInquiryProps {
   apiKey: string
+  onQuotaUsed?: (amount?: number) => void
 }
 
-export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
+export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey, onQuotaUsed }) => {
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SemanticSearchResult[]>([])
@@ -127,6 +128,7 @@ export const SemanticInquiry: React.FC<SemanticInquiryProps> = ({ apiKey }) => {
         if (doneData.answer) setStreamedAnswer(doneData.answer)
         if (doneData.provider) setProvider(doneData.provider)
         if (doneData.citations) setCitations(doneData.citations)
+        onQuotaUsed?.(1)
       },
       (err) => {
         setStreaming(false)

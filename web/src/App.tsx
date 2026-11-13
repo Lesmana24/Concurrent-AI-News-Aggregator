@@ -172,11 +172,24 @@ export const App: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  const handleQuotaUsed = useCallback((amount = 1) => {
+    setUser((prev) => {
+      if (!prev) return prev
+      const newQuota = Math.max(0, prev.quota - amount)
+      return { ...prev, quota: newQuota }
+    })
+    // Sync with server in background to get authoritative quota
+    setTimeout(() => {
+      loadUserData(apiKey)
+    }, 400)
+  }, [apiKey])
+
   const handleTriggerRecompute = async () => {
     try {
       await api.recomputeClusters(apiKey)
       const data = await api.getTrending(8)
       setTrendingClusters(data.topics || [])
+      handleQuotaUsed(1)
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Gagal menghitung ulang kluster')
     }
@@ -223,6 +236,7 @@ export const App: React.FC = () => {
             onSelectForComparison={handleSelectForComparison}
             onToggleWatchlist={handleToggleWatchlist}
             isWatched={isWatched}
+            onQuotaUsed={handleQuotaUsed}
           />
         )}
 
@@ -230,10 +244,16 @@ export const App: React.FC = () => {
           <MediaBiasSpectrum
             apiKey={apiKey}
             prefillUrls={prefillComparisonUrls}
+            onQuotaUsed={handleQuotaUsed}
           />
         )}
 
-        {activeTab === 'semantic' && <SemanticInquiry apiKey={apiKey} />}
+        {activeTab === 'semantic' && (
+          <SemanticInquiry
+            apiKey={apiKey}
+            onQuotaUsed={handleQuotaUsed}
+          />
+        )}
 
         {activeTab === 'telemetry' && (
           <SystemTelemetry

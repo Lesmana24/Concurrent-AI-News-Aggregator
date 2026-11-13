@@ -6,9 +6,10 @@ import { api } from '../services/api'
 interface MediaBiasSpectrumProps {
   apiKey: string
   prefillUrls?: string[]
+  onQuotaUsed?: (amount?: number) => void
 }
 
-export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, prefillUrls }) => {
+export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, prefillUrls, onQuotaUsed }) => {
   const [urls, setUrls] = useState<string[]>(['', ''])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -76,6 +77,7 @@ export const MediaBiasSpectrum: React.FC<MediaBiasSpectrumProps> = ({ apiKey, pr
     try {
       const data = await api.compareNews(apiKey, validUrls)
       setResult(data)
+      onQuotaUsed?.(1)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Gagal memproses perbandingan bias media')
     } finally {

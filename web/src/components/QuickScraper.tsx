@@ -21,6 +21,7 @@ interface QuickScraperProps {
   onSelectForComparison: (urls: string[]) => void
   onToggleWatchlist?: (item: WatchlistItem) => void
   isWatched?: (url: string) => boolean
+  onQuotaUsed?: (amount?: number) => void
 }
 
 const FALLBACK_ARTICLE_IMAGE = 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=600&q=80'
@@ -30,6 +31,7 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
   onSelectForComparison,
   onToggleWatchlist,
   isWatched,
+  onQuotaUsed,
 }) => {
   const [urlInput, setUrlInput] = useState('')
   const [ingesting, setIngesting] = useState(false)
@@ -112,6 +114,7 @@ export const QuickScraper: React.FC<QuickScraperProps> = ({
       setIngestedResult(result)
       setUrlInput('')
       fetchWire()
+      onQuotaUsed?.(1)
     } catch (err: unknown) {
       setIngestError(err instanceof Error ? err.message : 'Gagal mengekstrak berita dari URL')
     } finally {
