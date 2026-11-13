@@ -10,6 +10,7 @@ import { SystemTelemetry } from './components/SystemTelemetry'
 import { CommandPalette } from './components/CommandPalette'
 import { ApiKeyModal } from './components/ApiKeyModal'
 import { ExportModal } from './components/ExportModal'
+import { QuotaExhaustedBanner } from './components/QuotaExhaustedBanner'
 import {
   WatchlistDrawer,
   type WatchlistItem,
@@ -219,6 +220,12 @@ export const App: React.FC = () => {
 
       {/* 4. Main Active Tab View Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-8">
+        {/* Interactive Quota Exhaustion Alert with Live 00:00 WIB Countdown */}
+        <QuotaExhaustedBanner
+          user={user}
+          onOpenApiKeyModal={() => setIsApiKeyOpen(true)}
+        />
+
         {activeTab === 'trending' && (
           <TrendingRadar
             apiKey={apiKey}

@@ -14,9 +14,11 @@ import {
   UserPlus,
   AlertCircle,
   Loader2,
+  Clock,
 } from 'lucide-react'
 import type { UserMe } from '../types'
 import { api, DEFAULT_DEMO_KEY } from '../services/api'
+import { useWibCountdown } from '../utils/time'
 
 interface ApiKeyModalProps {
   isOpen: boolean
@@ -144,6 +146,7 @@ print("Total Clusters:", data.get("total_clusters"))`,
   const maxQuota = user?.daily_limit ?? (isGuest ? 5 : (user ? 100 : 5))
   const quotaValue = user ? user.quota : (isGuest ? 5 : 100)
   const quotaPercent = Math.min(Math.round((quotaValue / (maxQuota || 1)) * 100), 100)
+  const countdown = useWibCountdown()
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
@@ -207,6 +210,14 @@ print("Total Clusters:", data.get("total_clusters"))`,
             <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
               <span>Status: {isGuest ? 'Guest Sandbox (Auto Reset 00:00 WIB)' : (user?.status || 'Active Sandbox')}</span>
               <span>Rate Limit: {isGuest ? '20 RPM' : '60 RPM'}</span>
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800/80 text-[11px] font-mono">
+              <span className="text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-amber-500" /> Reset Kuota Berikutnya:
+              </span>
+              <span className="font-bold text-amber-700 dark:text-amber-400">
+                {countdown} (00:00 WIB)
+              </span>
             </div>
           </div>
 

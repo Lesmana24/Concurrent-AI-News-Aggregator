@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { RefreshCw, Server, Database, CheckCircle2, Zap } from 'lucide-react'
+import { RefreshCw, Server, Database, CheckCircle2, Zap, Clock } from 'lucide-react'
 import type { UserMe } from '../types'
 import { api } from '../services/api'
+import { useWibCountdown } from '../utils/time'
 
 interface SystemTelemetryProps {
   apiKey: string
@@ -46,6 +47,7 @@ export const SystemTelemetry: React.FC<SystemTelemetryProps> = ({ apiKey, user, 
   const dailyLimit = user?.daily_limit ?? (isGuest ? 5 : (user ? 50 : 5))
   const currentQuota = user ? user.quota : dailyLimit
   const quotaPercent = Math.min(100, Math.round((currentQuota / (dailyLimit || 1)) * 100))
+  const countdown = useWibCountdown(onRefreshUser)
 
   const displayKey = apiKey && apiKey !== 'undefined' && apiKey !== 'null'
     ? (isGuest ? `${apiKey.slice(0, 16)}... (Guest Pass)` : apiKey)
@@ -91,6 +93,12 @@ export const SystemTelemetry: React.FC<SystemTelemetryProps> = ({ apiKey, user, 
           <p className="text-xs text-slate-500 dark:text-slate-400 font-mono truncate">
             Active Key: <code className="text-amber-700 dark:text-amber-400 font-bold">{displayKey}</code>
           </p>
+          <div className="flex items-center justify-between text-xs font-mono text-slate-500 dark:text-slate-400 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+            <span className="flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-amber-500" /> Reset Kuota:
+            </span>
+            <span className="font-bold text-amber-700 dark:text-amber-400">{countdown} (00:00 WIB)</span>
+          </div>
         </div>
 
         {/* Card 2: News Harvester Daemon */}
